@@ -35,6 +35,14 @@
  * read:graph:page:confluence" while every other claim still judges normally.
  * Revoking a scope mid-demo does not reproduce: changes take about a minute to
  * propagate and rows keep coming back after removal.
+ *
+ * SEVEN CLAIMS ARE UNIVERSAL (`everyItem: true`): AC-01 on the work item and on the
+ * approval, AC-02, AC-04, AC-06, AC-07 and AC-10. Their text says "each" or "every",
+ * and the scan passes them only when every object it read qualified and the whole
+ * population was read; one unqualified object is a gap, a partial read is
+ * INCOMPLETE. The other thirteen are existential ("a record exists", "the policy is
+ * current") and keep the default reading, because inventing a universal claim over a
+ * population the rule never tested is how a spreadsheet gets a green row.
  */
 
 import {
@@ -242,6 +250,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           minCount: 1,
           rule: {
             requiresDoneStatus: true,
+            everyItem: true,
             expectation: 'Each deployed October change is a closed work item labelled ctrl-ac-01.',
           },
         },
@@ -252,7 +261,8 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           rule: {
             approvalPattern: '\\b(approved|approval|lgtm)\\b',
             requiresIndependentApprover: true,
-            expectation: 'An approver other than the assignee wrote an approval comment.',
+            everyItem: true,
+            expectation: 'Each change carries a comment approving it, written by someone other than its assignee.',
           },
         },
         {
@@ -302,6 +312,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           rule: {
             approvalPattern: '\\b(approved|approval|lgtm)\\b',
             requiresIndependentApprover: true,
+            everyItem: true,
             expectation: 'Approval and execution are separated for every production change.',
           },
         },
@@ -354,6 +365,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           rule: {
             approvalPattern: '\\b(approved|granted|authorised|authorized)\\b',
             requiresIndependentApprover: true,
+            everyItem: true,
             expectation: 'Each privileged grant shows a second approver.',
           },
         },
@@ -396,6 +408,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           minCount: 1,
           rule: {
             requiresDoneStatus: true,
+            everyItem: true,
             expectation: 'Every incident has a linked postmortem closed inside the window.',
           },
         },
@@ -437,6 +450,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           minCount: 1,
           rule: {
             requiresDoneStatus: true,
+            everyItem: true,
             expectation: 'A due-diligence record exists for each critical vendor.',
           },
         },
@@ -499,6 +513,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           minCount: 1,
           rule: {
             requiresDoneStatus: true,
+            everyItem: true,
             expectation: 'Every high-severity finding has a closed remediation item within SLA.',
           },
         },

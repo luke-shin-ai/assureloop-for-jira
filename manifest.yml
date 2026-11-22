@@ -19,8 +19,8 @@
 #     impersonation grant is a scope modification, which Forge treats as a MAJOR
 #     version upgrade — every installation, including the reviewer sites this is
 #     judged from, would have to re-approve mid-submission. Dropping it is the first
-#     post-submission release (after 2026-12-13); the review and its reason are in
-#     roi5-verification.md §C13, and the same note sits beside the scope below.
+#     post-submission release (after 2026-12-13); the reason is written beside the
+#     scope below, and nothing in the code reads it.
 #   * Each declared scope names its reader below, so a reviewer diffing the
 #     manifest against the code can see there is no scope theatre.
 #   * No egress is declared: the app talks to nothing outside Atlassian.
@@ -269,7 +269,7 @@ permissions:
     # modification, which Forge treats as a MAJOR version upgrade — every installation,
     # including the reviewer sites judged from, would have to re-approve mid-submission.
     # It is scheduled for the post-submission release (after 2026-12-13), not dropped
-    # silently: the review and its reason are in roi5-verification.md §C13.
+    # silently: the reason is the paragraph above, and no code path reads the grant.
     'read:jira-work':
       allowImpersonation: true
     'write:jira-work':

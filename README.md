@@ -11,7 +11,7 @@ could not look, instead of "no evidence".
 evidence types with no connector on the site, and whether a recorded exception is substantively
 right. Those are stated on every surface, not discovered by a reviewer.
 
-**Measured 2026-11-20 (v6.48.0, demo site):** 20 claims across 12 controls, 18 verified, 1 stale, 1 missing, 0 not visible, 0 not checked in 22,989 ms, `graph 17 read(s)`; audit-pack fingerprint
+**Measured 2026-11-20 (v6.48.0, demo site; the source in this repository is v6.49, see §2):** 20 claims across 12 controls, 18 verified, 1 stale, 1 missing, 0 not visible, 0 not checked in 22,989 ms, `graph 17 read(s)`; audit-pack fingerprint
 `d851a46a6c4af955`-class value over 20 rows and 18 hashed fields, `Verify fingerprint -> VERIFIED MATCH`.
 (The displayed digest is now 128 bits, so the value printed on a new pack is 32 hex characters long. The 2026-11-20 pack printed 16.)
 
@@ -22,7 +22,7 @@ right. Those are stated on every surface, not discovered by a reviewer.
 | **Technological Implementation** | 9 idempotent tables, 20 resolver keys, **489 assertions** (`npm run smoke`, no site needed), a 6-second cap on every graph hop, retry isolation per call chain, and one deterministic verdict function shared by three surfaces |
 | **Design** | Five states that are the product logic (`VERIFIED / STALE / MISSING / NOT_VISIBLE / INCOMPLETE`), the four surfaces (issue panel, Control Room, Confluence macro, Rovo agent) share one visual language, empty and error states are designed (nothing to judge yet / cannot see this / not checked), and an empty site reaches a judged one in one click |
 | **Potential Impact** | 12 controls × 2-3 h of manual work per quarter is the **estimate** it replaces; what is measured is the read: 20 claims in 23 s, 37 pages no control claims found by the reverse scan |
-| **Innovation / Idea** | `MISSING` requires a read that finished and saw nothing; a claim over a population prints how much of it was read; the app publishes what it does **not** guarantee; and the cross-product claim `approval_independence` cannot be answered by REST at all: page owner -> their teams -> membership is a Teamwork Graph traversal, so the graph changes a verdict rather than decorating one |
+| **Innovation / Idea** | `MISSING` requires a read that finished and saw nothing; a claim over a population prints how much of it was read; a universal claim fails on one unqualified object; the app publishes what it does **not** guarantee; and the cross-product claim `approval_independence` has no REST answer: it queries the policy page's owner, that owner's team and the team membership from Teamwork Graph, and anchors those hops in the evidence trace with the observation time of each. Where that read does not come back, the claim says `not visible` instead of inventing a finding |
 | **Best apps with Teamwork Graph integration** | 4 curated hop families + 1 persisted Cypher traversal + a scope ledger that records which scopes the run actually proved, and a scope-named `NOT_VISIBLE` when it could not |
 
 ### Where to look without installing anything
@@ -34,11 +34,13 @@ Everything below runs in a browser tab or a terminal, with no Atlassian site, no
 | The product itself: the Control Room's 20 claims, an Evidence panel with **Why?**, the audit pack, the trust boundary | `docs/demo/index.html` (open the file) or <https://luke-shin-ai.github.io/assureloop-for-jira/demo/>. Static HTML, no server, no build | 2 min |
 | The numbers in this README against the code that produces them | `npm run check:claims` | 30 s |
 | Every claim the engine rests on | `npm run smoke`: 489 assertions in 12 files, no site | 60 s |
-| The 4:24 demo, narrated | <https://youtu.be/tMvfF34CHDI> (unlisted) | 4.5 min |
-| The eight screenshots the submission uses | `../screenshots/` | 3 min |
+| The 4:24 demo, narrated | <https://youtu.be/h7eMQPS6ioI> (public) | 4 min |
+| The eight screenshots the submission uses | `docs/screenshots/` | 3 min |
 | The audit pack rendered by a real Confluence macro | the demo site, page `ITO/AC-01 audit pack` | 1 min |
 
 The static demo is generated from the same rule data the app ships (`src/seed/northwind-pay.ts`), so a claim you see there is the claim the engine judges; it is a rendering of the shipped programme, not a mock of a screenshot.
+
+![The Control Room after a scan: five counters, one bound project, twelve controls and the audit card](docs/screenshots/01-control-room-counters-1920.png)
 
 ---
 
@@ -89,8 +91,13 @@ verdict, not hidden.
 - **`everyItem: true` makes a claim universal.** With that flag the claim passes only when
 every object that was read qualified *and* the whole population was read; a partial read is
 `INCOMPLETE`, and one unqualified object is `MISSING` with `1 of 12 read qualified` in the
-reason. The shipped rules keep the default (existential) reading, and the claim text says
-so; a rule that means "each" should set the flag.
+reason. Seven of the shipped claims carry the flag: AC-01 on the work item and on the
+approval, AC-02, AC-04, AC-06, AC-07 and AC-10, which are the ones whose text says "each" or
+"every". The other thirteen read existentially ("a record exists", "the policy is current")
+and their text says so. The counts quoted at the top of this page were measured on 2026-11-20
+with v6.48.0, before the flag reached the shipped programme; it can only fail a claim the
+existential reading passed, so a rescan with the source in this repository can report more
+`MISSING` or `INCOMPLETE` and cannot report less than the 2026-11-20 scan did.
 
 ### Approval language
 
@@ -125,7 +132,7 @@ Twenty-seven cases are pinned in `test/v640.regressions.cjs`.
 | Fingerprint re-verification | **Written, verified live**: `Verify fingerprint` recomputes the pack's SHA-256 and shows VERIFIED MATCH / DRIFT DETECTED |
 | Trust boundary | **Written**: "what this pack guarantees / does NOT guarantee" on the panel, the Control Room, the macro and in the memo |
 | Seed data (Northwind Pay) | **Written**; insertion needs a live site |
-| `forge deploy` / install | **Done**: source **v6.48.0**, deployed to **development 6.48.0** and **production 2.1.0** on `one-atlas-xkzp.atlassian.net` (Jira + Confluence, both Up-to-date), distribution link issued (Sharing with anyone), Runs on Atlassian eligible |
+| `forge deploy` / install | **Source here is v6.49, which is not deployed yet.** What runs on `one-atlas-xkzp.atlassian.net` today is **development 6.48.0** and **production 2.1.0** (deployed 2026-11-20T09:04:34Z), Jira and Confluence both Up-to-date, Runs on Atlassian eligible on both. The distribution link (Sharing with anyone) installs **2.1.0**, so that is the build a reviewer sees; v6.49 adds two post-submission fixes (the approval wording rule and the universal-claim flag described above) and goes out in the first post-submission release, planned after 2026-12-13 |
 
 ## 3. Structure
 
@@ -143,15 +150,19 @@ assureloop/
 │   ├── jira/rest.ts             # JQL, issue, comments, components, remediation issues
 │   ├── confluence/rest.ts       # page freshness, space resolution, page ARIs
 │   ├── schema/sql.ts            # DDL (migrationRunner) + typed query helpers
-│   └── seed/northwind-pay.ts    # synthetic programme (12 controls, 6 pages, 12 changes)
+│   ├── audit/pack.ts            # fingerprint (18 hashed fields), memo, re-verification
+│   ├── audit/orphans.ts         # reverse scan: pages no control names
+│   └── seed/northwind-pay.ts    # synthetic programme (12 controls, 7 pages, 12 changes)
 ├── ui/                          # Custom UI sources (bundled by scripts/build-ui.mjs)
 │   ├── shared/{ui.js,styles.css}# bridge calls, DOM, trace renderer, env panel
 │   ├── issue-panel/main.js      # the Evidence Gate
 │   ├── control-room/main.js     # the rollup
 │   └── macro/main.js            # the audit pack
 ├── static/{issue-panel,control-room,macro}/   # index.html + built main.js + styles.css
-├── docs/demo/                   # static, no-install demo of the Control Room (GitHub Pages)
-├── scripts/{build-ui.mjs,check-claims.mjs}     # UI bundles; the docs-vs-code check
+├── docs/demo/                   # static, no-install demo of the Control Room and the pack (GitHub Pages)
+├── docs/index.html              # Pages root, sends a visitor to the demo
+├── docs/screenshots/            # the eight screenshots the submission uses
+├── scripts/                     # build-ui, build-demo, check-claims, check-demo (browser measurement)
 ├── skills/audit-pack-playbook/SKILL.md
 ├── resource/agent/{prompts,icons}/
 └── test/                        # 12 files, 489 assertions, no site required
@@ -159,12 +170,11 @@ assureloop/
 
 ## 4. Prerequisites
 
-- Node **22.23.4+** (or 24.x). This workspace: `tools/node/bin/node` = v22.23.5.
-- Forge CLI **15.1.0**: `tools/npm-global/bin/forge`.
+- Node **22.23.4+** (or 24.x). The numbers in this document were measured on v22.23.5.
+- Forge CLI **15.1.0** (`npm install -g @forge/cli`).
 - An Atlassian account + API token with the Forge scope.
 
 ```bash
-export PATH="/workspace/tools/node/bin:/workspace/tools/npm-global/bin:$PATH"
 export FORGE_EMAIL="<Atlassian account email>"
 export FORGE_API_TOKEN="<token>"
 ```
@@ -189,9 +199,9 @@ forge lint          # manifest + code: expects "No issues found"
 the code (controls and claims in `src/seed/northwind-pay.ts`, hashed fields in
 `src/audit/pack.ts`, scopes and modules in `manifest.yml`, resolver keys in `src/index.ts`, tables
 in `src/schema/sql.ts`, and the assertion counts by running each test file) and then fails if a
-public document disagrees, still carries a measured value that has been superseded, or contains
-an AI-style glyph (em or en dash, middle dot, arrow, smart quotes, ellipsis, emoji). It is a plain
-Node script with no dependencies: `node scripts/check-claims.mjs`.
+public document disagrees or still carries a measured value that has been superseded. It is the
+documentation-to-code numeric consistency check: a plain Node script with no dependencies,
+`node scripts/check-claims.mjs`, and no site or credential of any kind.
 
 The smoke suite pins the claims the product rests on:
 
@@ -213,8 +223,7 @@ The smoke suite pins the claims the product rests on:
 ### 6.1 Deploy and install
 
 ```bash
-cd hackathons/codegeist-2026-atlassian/assureloop
-npm run build:ui          # bundles the three Custom UI surfaces
+npm run build:ui          # bundles the three Custom UI surfaces, from the repository root
 forge deploy
 forge site provision      # demo site (90 days); provision in early December
 forge install --demo-site
@@ -412,7 +421,7 @@ lives in SQL (`app_config.scan_principal_account_id`) and is therefore per insta
 | # | Claim | Status |
 |---|---|---|
 | 1 | TypeScript compiles clean (strict) | **Verified**: `npx tsc --noEmit`, 0 errors |
-| 2 | Five states are deterministic; unproven scope ≠ MISSING; throttle ≠ MISSING; an absent page is MISSING; an unread population is never MISSING; a persisted failure never moves a verdict | **Verified**: `npm run smoke`, 489/489 |
+| 2 | Five states are deterministic; unproven scope ≠ MISSING; throttle ≠ MISSING; an absent page is MISSING; an unread population is never MISSING; a universal claim fails on one unqualified object; a persisted failure never moves a verdict | **Verified**: `npm run smoke`, 489/489 |
 | 3 | `manifest.yml` passes Forge validation, including `jira:globalPage` and map-form scopes with `allowImpersonation` | **Verified**: `forge lint` -> *No issues found* |
 | 4 | The app is registered and `app.id` is in the manifest | **Verified**: `ari:cloud:ecosystem::app/f671f494-1c70-40d1-a9e7-624b9d45ada2` |
 | 5 | Custom UI bundles build and every `resource:` path resolves | **Verified**: `npm run build:ui`, `forge lint` |
@@ -426,14 +435,16 @@ lives in SQL (`app_config.scan_principal_account_id`) and is therefore per insta
 | 13 | Empty-site path (Bind + Discovery) | **Read path verified live**: `siteSetup` lists 26 projects and the site's spaces; the bind card renders. The write path is **not** exercised on the demo site (it would re-point the demo registry and there is no live way to restore per-rule spaces) |
 | 14 | Audit pack is reproducible and copyable | **Verified live**: the previous round produced `1ed720dc080bcf63` / `f5f894d9ce02dafd` at the old 16-hex display length. 2026-11-19: Jira scan `e9d2df0e` -> `e1ed21327ccc723f`, Confluence scan `b1f6f1cb` -> `0f0e4954b29fcafb`; **Verify fingerprint** returned *VERIFIED MATCH* on both surfaces |
 | 15 | A 403 phrased `status code is: 403` is NOT_VISIBLE and is not retried | **Verified**: `hardening`/`judge`/`gate.fixture` (C1) shows the classification order is fixed; the fixture shows NOT_VISIBLE with 0 retries and the scope named |
-| 16 | The graph decides a verdict (not decoration) | **Verified**: a policy page whose ownership hop returns no rows is **STALE**, reason names `confluencePageOwners` (scan.honesty). On the demo site the hop returns an owner, so counts did not move |
+| 16 | A graph read carries the claim, not decoration: a policy page whose ownership hop returns no rows is not verified | **Verified**: a policy page whose ownership hop returns no rows is **STALE**, reason names `confluencePageOwners` (scan.honesty). On the demo site the hop returns an owner, so counts did not move |
 | 17 | The scope ledger is a measurement | **Verified**: `scopeProbeFromObservation` in both gate and scan; the scan's probe matrix now receives space/page/Jira-space ARIs |
 | 18 | PR/deployment/test-record claims are not the work item itself | **Verified**: remote links + the control's record population; no connector -> UNSUPPORTED (kept out of gaps) |
 | 19 | Reverse scan finds unclaimed evidence | **Verified live**: 43 pages read in ITO/SECOPS/LEGAL, 6 claimed, 37 unclaimed (2026-11-19 14:37 KST) |
 | 20 | Exceptions and "Unexplained gaps" | **Verified live**: AC-06 exception recorded (until 2027-01-31, compensating control), card shows *Unexplained gaps: 1 of 2*, pack row discloses it |
 
-**Full G0 record:** `../g0-benchmark.md` (12 items with numbers, four defects found and fixed,
-remaining unknowns).
+**Full G0 record:** twelve probes with their numbers, four defects found and fixed, and the
+unknowns left open. That record is kept with the project's working notes rather than in this
+repository; what these pages quote from it is either read back out of the code by
+`npm run check:claims` or dated to the scan that measured it.
 
 ## 10. Cost
 
@@ -442,8 +453,13 @@ external API, no container, no LLM billing.
 
 ## 11. Next
 
+- **Post-submission release, planned after 2026-12-13:** deploy v6.49 to production so the
+  install link serves the build this repository describes. It carries the approval wording
+  rule, the universal-claim flag, and the scope cleanup that has to wait for the judging
+  window (the unused impersonation on `write:jira-work` and `read:confluence-content.all`,
+  both of which force every installation to re-approve).
 - ~~W1: deploy + install on the demo site, seed Northwind Pay, run the G0 probes~~ done
-  2026-11-18 (`../g0-benchmark.md`).
+  2026-11-18.
 - ~~STALE row, trace-SVG overlap/label clipping, Control Room scan button, macro render~~ done
   2026-11-18: `STALE` comes from AC-06's aged runbook, the trace lays hops out in their own
   columns with wrapped labels, the dead scan button was a shadowed handler (`const scan =

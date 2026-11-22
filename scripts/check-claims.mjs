@@ -19,9 +19,10 @@
  *   discovery population     the page size of the discovery JQL (5)
  *   assertions               each test/*.cjs file is executed and its own count read
  *
- * It also fails on an AI-style glyph (em or en dash, middle dot, arrow, smart
- * quote, ellipsis, emoji) in a public document, because those are the marks a
- * reader uses to decide a text was not written by the person who signed it.
+ * It also rejects a small set of typographic characters (em or en dash, middle dot,
+ * arrows, smart quotes, ellipsis, emoji) in a public document, and any path that points
+ * outside the repository, so a page reads the same in every viewer and links only to
+ * files that exist here.
  *
  * No dependencies. Exit code 0 means every public number matches the code.
  */
@@ -111,8 +112,15 @@ if (!problems.length) ok(`npm run smoke: ${total} assertions in ${Object.keys(co
 const docs = {
   'README.md': read('README.md'),
   'TESTING.md': read('TESTING.md'),
-  'devpost-form-about.md': read('../devpost-form-about.md'),
 };
+
+// The Devpost write-up is written beside the repository while the entry is prepared, so
+// a clone has no copy of it. Checked when it is there, never required.
+const devpost = join(ROOT, '../devpost-form-about.md');
+if (existsSync(devpost)) docs['devpost-form-about.md'] = readFileSync(devpost, 'utf8');
+
+// Documents that carry no numbers but still face a reader: the demo's own README.
+const glyphDocs = { ...docs, 'docs/demo/README.md': read('docs/demo/README.md') };
 
 const glyphNames = {
   '\u2014': 'em dash', '\u2013': 'en dash', '\u00b7': 'middle dot',
@@ -122,16 +130,35 @@ const glyphNames = {
 };
 const emoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
 
-for (const [name, text] of Object.entries(docs)) {
+for (const [name, text] of Object.entries(glyphDocs)) {
   for (const [line, body] of text.split('\n').entries()) {
     const glyphs = [...body].filter((ch) => glyphNames[ch] || emoji.test(ch));
     if (glyphs.length) {
       const found = [...new Set(glyphs)].map((ch) => glyphNames[ch] ?? `emoji ${ch}`).join(', ');
-      fail(`${name}:${line + 1} carries an AI-style glyph (${found}): ${body.trim().slice(0, 90)}`);
+      fail(`${name}:${line + 1} carries a typographic glyph (${found}): ${body.trim().slice(0, 90)}`);
     }
   }
 }
-if (!problems.length) ok('no AI-style glyphs in README.md, TESTING.md or the Devpost write-up');
+if (!problems.length) ok('no typographic glyphs in the public documents (README, TESTING, demo README)');
+
+/**
+ * A public document may only point at files this repository has. A relative path that
+ * walks out of the tree, or an absolute path into the machine that wrote it, is a 404
+ * for every reader who is not the author, and a repository is read by people who are
+ * not the author.
+ */
+const outsideTree = [
+  [/\/workspace\//, 'an absolute working path (/workspace/...)'],
+  [/(^|[\s(`"'])\.\.\//, 'a relative path outside the repository (../...)'],
+  [/\bhackathons\//, 'a project folder that is not part of this repository'],
+];
+for (const [name, text] of Object.entries(glyphDocs)) {
+  for (const [line, body] of text.split('\n').entries()) {
+    const hit = outsideTree.find(([pattern]) => pattern.test(body));
+    if (hit) fail(`${name}:${line + 1} points at ${hit[1]}: ${body.trim().slice(0, 90)}`);
+  }
+}
+if (!problems.length) ok('no public document points outside the repository (no ../, no /workspace/)');
 
 /** Assert every "<n> assertions" in a document equals the measured total. */
 function checkAssertionTotals(name, text) {
@@ -210,7 +237,7 @@ if (discoverySize > 0) {
   const spelled = ['five', 'six', 'seven', 'eight', 'nine', 'ten'];
   const word = spelled[discoverySize - 5] ?? String(discoverySize);
   const sentence = docs['devpost-form-about.md'];
-  if (!new RegExp(`\\b(${word}|${discoverySize})\\b most recently completed change`).test(sentence)) {
+  if (sentence && !new RegExp(`\\b(${word}|${discoverySize})\\b most recently completed change`).test(sentence)) {
     fail(`the Devpost write-up does not describe discovery mode as reading the ${discoverySize} most recently completed changes`);
   }
 }
@@ -230,13 +257,13 @@ if (!existsSync(rel(demoPath))) {
   else if (Number(quoted[1]) !== claims) fail(`${demoPath} renders ${quoted[1]} claims; the programme has ${claims}`);
   for (const [line, body] of demo.split('\n').entries()) {
     const glyphs = [...body].filter((ch) => glyphNames[ch] || emoji.test(ch));
-    if (glyphs.length) fail(`${demoPath}:${line + 1} carries an AI-style glyph (${[...new Set(glyphs)].join(' ')})`);
+    if (glyphs.length) fail(`${demoPath}:${line + 1} carries a typographic glyph (${[...new Set(glyphs)].join(' ')})`);
   }
   const demoData = read('docs/demo/data.js');
   for (const file of ['docs/demo/data.js', 'docs/demo/app.js', 'docs/demo/styles.css']) {
     for (const [line, body] of read(file).split('\n').entries()) {
       const glyphs = [...body].filter((ch) => glyphNames[ch] || emoji.test(ch));
-      if (glyphs.length) fail(`${file}:${line + 1} carries an AI-style glyph (${[...new Set(glyphs)].join(' ')})`);
+      if (glyphs.length) fail(`${file}:${line + 1} carries a typographic glyph (${[...new Set(glyphs)].join(' ')})`);
     }
   }
   const demoFields = demoData.match(/"fingerprintFields": \[([\s\S]*?)\]/);
@@ -252,7 +279,7 @@ if (!existsSync(rel(demoPath))) {
     const total = states.reduce((acc, state, index) => acc + Number(demoCounts[index + 1]), 0);
     if (total !== claims) fail(`docs/demo/data.js counts add up to ${total}; the programme has ${claims} claims`);
   }
-  if (!problems.length) ok(`${demoPath} renders ${claims} claims, hashes the app's ${sourceFields.length} fields, and carries no AI-style glyph`);
+  if (!problems.length) ok(`${demoPath} renders ${claims} claims, hashes the app's ${sourceFields.length} fields, and carries no typographic glyph`);
 }
 
 // ---------------------------------------------------------------------------

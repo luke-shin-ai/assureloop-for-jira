@@ -2,13 +2,14 @@
 
 **Codegeist 2026: Apps for Specialized Industries (finance)**
 **Bonus prize claimed: Best apps with Teamwork Graph integration**
-**Source version: 6.48.0**; **deployed to production (production version 2.1.0, 2026-11-20T09:04:34Z)**
-**Distribution: Sharing with anyone; installation link issued 2026-11-20** (link text and app-detail fields in `../sharing-links.md`)
+**Source version in this repository: 6.49** (not deployed yet); **deployed: development 6.48.0 and production 2.1.0** (2026-11-20T09:04:34Z), so 2.1.0 is the build an install link delivers. The two fixes that are in 6.49 and not in 2.1.0 are listed in README §2.
+**Distribution: Sharing with anyone; installation link issued 2026-11-20** (it opens the Atlassian install page for the app, with the vendor details and the 13 scopes)
 App ID `ari:cloud:ecosystem::app/f671f494-1c70-40d1-a9e7-624b9d45ada2`
 
 Every number in §3, §4 and §6 below was re-measured on the **production** installation of the demo
-site on 2026-11-20 after that deployment, and the raw output is in `verify-output.txt`. Screenshots
-(1920 px window) are in `../screenshots/` (list at the end of this document).
+site on 2026-11-20 after that deployment. Screenshots (1920 px window) are in `docs/screenshots/`
+(list at the end of this document). Every number can also be re-derived offline with
+`npm run check:claims`, which reads it out of the code and the test runs.
 
 This document is written for a judge with five minutes and a Jira Cloud site. Every claim below
 is something you can see in the app, in the manifest, or in a test you can run yourself. Where a
@@ -43,8 +44,7 @@ one is the auditee's problem.
 ## 1. Install
 
 The submission provides a Forge **installation link** (Developer Console -> Distribution -> Sharing, status **Sharing with anyone**) on the Devpost submission page. It was issued on
-2026-11-20 and points at the production deployment (2.1.0); the full text is in
-`../sharing-links.md`. Opening it requires a **site admin** on the target site, verified on
+2026-11-20 and points at the production deployment (2.1.0). Opening it requires a **site admin** on the target site, verified on
 2026-11-20 by opening the link, which renders the app's install page ("AssureLoop", "For Jira,
 Confluence", the vendor privacy policy and the 13 scopes). Use it, then:
 
@@ -73,7 +73,7 @@ a missing Teamwork Graph scope returns an **empty, successful** result, so most 
 | `write:jira-work` | Remediation issues and the claim label: only after a person presses **Close the gaps** |
 | `read:page:confluence` | Confluence v2 pages (`/wiki/api/v2/pages`) |
 | `read:space:confluence` | Confluence v2 spaces (`/wiki/api/v2/spaces`) |
-| `read:confluence-content.all` | Legacy Confluence v1 content API. Declared, **not called by current code**; it is removed in the first post-submission release together with the unused impersonation on `write:jira-work` (see `../roi5-verification.md` §C13) |
+| `read:confluence-content.all` | Legacy Confluence v1 content API. Declared, **not called by current code**; it is removed in the first post-submission release together with the unused impersonation on `write:jira-work` (the reason is written beside the scope in `manifest.yml`) |
 | `read:graph:issue:jira` | `jiraSpaceWorkItems`: the population probe |
 | `read:graph:issue-comment:jira` | `jiraWorkItemComments`: approval comments |
 | `read:graph:project:jira` | The Jira space behind a work item |
@@ -433,7 +433,7 @@ Stated here rather than found by you:
 7. **Not listed on Marketplace.** The Marketplace bonus was not claimed; the bonus claimed is
    Teamwork Graph integration, which is what the product actually cannot work without.
 8. **Loom and Assets were cut.** The account has no Loom data and Assets exposes only
-   `objects(ids:)`, so neither can be a hop (`../g0-benchmark.md` #12). They are not claimed anywhere
+   `objects(ids:)`, so neither can be a hop (G0 #12). They are not claimed anywhere
    in the product.
 
 ---
@@ -462,7 +462,7 @@ Captured on 2026-11-20 between 18:00 and 18:13 KST in a **1920 px-wide window** 
 2400 × 1241 device px at the browser's 1.25 device ratio) against the demo site, production
 installation. Each file was opened and checked for clipping before it was kept.
 
-| File (`../screenshots/`) | What it shows |
+| File (`docs/screenshots/`) | What it shows |
 |---|---|
 | `01-control-room-counters-1920.png` | Control Room: `bound, PAY`, LAST SCAN `18 / 1 / 1 / 0 / 0`, `full registry, graph 17 read(s)`, `unexplained gaps 1`, Environment Check 5 green, 1 yellow |
 | `02-control-room-audit-pack-verified-match-1920.png` | Audit pack: fingerprint `ee61873b3a522752`, **Verify fingerprint -> VERIFIED MATCH**, `Unexplained gaps: 1 of 2`, the AC-06 row carrying `exception until 2027-01-31` |

@@ -40,8 +40,9 @@ npm run test:demo                  # Playwright: 1440, 1920 and 390x844
 `scripts/check-demo.py` asserts, at each viewport, that `documentElement.scrollWidth` and
 `body.scrollWidth` do not exceed `innerWidth`, that no element crosses the viewport edge, that
 twenty claim rows and five counters render, that `Why?` opens a trace, that **Verify fingerprint**
-returns VERIFIED MATCH, and that **Show all** expands and collapses. It saves
-`../screenshots/pages-desktop-ux.png` and `../screenshots/pages-mobile-ux.png`.
+returns VERIFIED MATCH, and that **Show all** expands and collapses. It saves a desktop and a
+mobile full-page screenshot to the directory given by `--shots` (by default a `screenshots/` folder
+beside the repository, which is where the submission's captures were made).
 
 Playwright's Chromium needs its system libraries; on a machine where the bundled browser cannot
 find `libnspr4.so`, point it at a sysroot that has them
