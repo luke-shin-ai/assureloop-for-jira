@@ -1,0 +1,33 @@
+{
+  "name": "assureloop",
+  "version": "0.1.0",
+  "description": "AssureLoop for Jira — Evidence, not spreadsheets. Audit-ready answers from the Teamwork Graph, with the receipts.",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build:ui": "node scripts/build-ui.mjs",
+    "build:demo": "node scripts/build-demo.mjs",
+    "check:claims": "node scripts/check-claims.mjs",
+    "test:demo": "python3 scripts/check-demo.py",
+    "smoke": "tsc && node test/resolvers.unique.cjs && node test/judge.smoke.cjs && node test/gate.fixture.cjs && node test/scan.honesty.cjs && node test/audit.pack.cjs && node test/trace.render.cjs && node test/control-room.render.cjs && node test/hardening.cjs && node test/v627.regressions.cjs && node test/v630.regressions.cjs && node test/v635.regressions.cjs && node test/v640.regressions.cjs",
+    "lint:manifest": "forge lint",
+    "deploy": "npm run build:ui && forge deploy",
+    "tunnel": "forge tunnel"
+  },
+  "dependencies": {
+    "@forge/api": "^8.5.0",
+    "@forge/bridge": "^7.3.0",
+    "@forge/resolver": "^2.0.2",
+    "@forge/sql": "^4.0.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "esbuild": "^0.25.12",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.3"
+  }
+}

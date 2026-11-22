@@ -1,0 +1,310 @@
+# AssureLoop for Jira — Forge manifest
+#
+# SURFACE ORDER (E1)
+#   `jira:issuePanel` is the product: one work item, its claims, judged live.
+#   `jira:globalPage` is the rollup and the Environment Check entry point.
+#   `macro` is the audit pack a control owner can drop on a Confluence page.
+#
+# SCOPES
+#   * Teamwork Graph scopes are per object type: read:graph:<object>:<product>.
+#     A missing scope does not error, it returns an empty result, so every object
+#     type touched by a traversal (including intermediate hops) is declared.
+#   * `allowImpersonation: true` is declared on every read the unattended daily scan
+#     needs: a scheduled trigger has no user context, and the Teamwork Graph is
+#     only reachable through asUser() (asApp() has no requestTeamworkGraph), so
+#     the drift scan impersonates the stored scan principal.
+#   * `write:jira-work` also carries `allowImpersonation: true` today, and the code
+#     never uses it: every write (remediation issues, the claim label) runs through
+#     asApp() inside a person's request. It stays declared because removing an
+#     impersonation grant is a scope modification, which Forge treats as a MAJOR
+#     version upgrade — every installation, including the reviewer sites this is
+#     judged from, would have to re-approve mid-submission. Dropping it is the first
+#     post-submission release (after 2026-12-13); the review and its reason are in
+#     roi5-verification.md §C13, and the same note sits beside the scope below.
+#   * Each declared scope names its reader below, so a reviewer diffing the
+#     manifest against the code can see there is no scope theatre.
+#   * No egress is declared: the app talks to nothing outside Atlassian.
+
+modules:
+  # ---------------------------------------------------------------------------
+  # Rovo agent — the conversational surface (4 actions + 1 skill)
+  # ---------------------------------------------------------------------------
+  rovo:agent:
+    - key: assurance-agent
+      name: Assurance Agent
+      description: >-
+        Answers audit questions from the Teamwork Graph with evidence, provenance
+        and freshness - and says plainly when a claim cannot be verified.
+      icon: resource:agent-resource;icons/assureloop.svg
+      prompt: resource:agent-resource;prompts/assurance-agent.md
+      conversationStarters:
+        - What does PAY-1 need to prove before it ships?
+        - Which claims cannot be verified because of permissions?
+        - Explain why the approval claim for PAY-1 is not verified
+      actions:
+        - get-evidence
+        - explain-verdict
+        - scan-control
+        - create-remediation
+      skills:
+        - audit-pack-playbook
+      followUpPrompt: >-
+        Offer the next step: open the evidence gate for the work item, explain a
+        claim, or raise remediation issues for the gaps that were found.
+
+  # ---------------------------------------------------------------------------
+  # Actions — the agent's tools.
+  # GET actions are stateless: they read the graph and REST for one work item and
+  # never require Forge SQL, because an agent can land on an installation whose
+  # database is not reachable. CREATE/TRIGGER actions only run after a human
+  # confirms in chat or in the UI.
+  # ---------------------------------------------------------------------------
+  action:
+    - key: get-evidence
+      name: Get evidence for a work item
+      function: get-evidence-fn
+      actionVerb: GET
+      description: >-
+        Read one Jira work item and judge each claim its control requires:
+        verified, stale, missing, not visible or incomplete. Stateless and
+        read-only; it never needs a previous scan.
+      inputs:
+        issueKey:
+          title: Jira issue key
+          type: string
+          required: true
+          description: Work item key such as PAY-1.
+        siteUrl:
+          title: Site URL
+          type: string
+          required: false
+          description: >-
+            Optional. Used only to build a deep link back to the work item when the
+            action is invoked from a context that cannot read Jira (Rovo home chat).
+
+    - key: explain-verdict
+      name: Explain a verdict
+      function: explain-verdict-fn
+      actionVerb: GET
+      description: >-
+        Return the graph path behind one claim: each hop's ARI, relationship and
+        observation time, plus the query key, row count and latency.
+      inputs:
+        issueKey:
+          title: Jira issue key
+          type: string
+          required: true
+          description: Work item whose claim should be explained.
+        claim:
+          title: Claim
+          type: string
+          required: false
+          description: Part of the claim name, e.g. approval or policy.
+
+    - key: scan-control
+      name: Scan a control
+      function: scan-control-fn
+      actionVerb: TRIGGER
+      description: >-
+        Run the deterministic registry scan for one control and return per-claim
+        verdicts with the cause of every incomplete read. Name a single control:
+        Rovo gives an action about 20 seconds, and a whole-registry scan can take
+        longer than that.
+      inputs:
+        controlCode:
+          title: Control code
+          type: string
+          required: true
+          description: >-
+            Control code such as AC-01. Required: one control per call, because a
+            whole-registry scan (~19.5 s measured) outlives the ~20-second action
+            budget and would come back as a timeout rather than an answer.
+
+    - key: create-remediation
+      name: Create remediation issues
+      function: create-remediation-fn
+      actionVerb: CREATE
+      description: >-
+        Create Jira issues for the gaps found on one work item, assigning each to
+        the owner the graph resolves (page owner, assignee, component lead).
+      inputs:
+        issueKey:
+          title: Jira issue key
+          type: string
+          required: false
+          description: Work item whose gaps should be closed.
+        controlCode:
+          title: Control code
+          type: string
+          required: false
+          description: Restrict the scan to one control.
+        dueInDays:
+          title: Due in days
+          type: integer
+          required: false
+          description: Override the due date window.
+
+  # ---------------------------------------------------------------------------
+  # Skill — multi-step procedure kept out of the agent prompt
+  # ---------------------------------------------------------------------------
+  rovo:skill:
+    - key: audit-pack-playbook
+      source:
+        dir: skills/audit-pack-playbook
+      dependencies:
+        tools:
+          - get-evidence
+          - explain-verdict
+          - scan-control
+
+  # ---------------------------------------------------------------------------
+  # The product: per-work-item evidence gate (primary surface)
+  # ---------------------------------------------------------------------------
+  jira:issuePanel:
+    - key: evidence-panel
+      resource: issue-panel-ui
+      resolver:
+        function: resolver
+      title: Evidence
+      icon: resource:issue-panel-ui;icon.svg
+
+  # ---------------------------------------------------------------------------
+  # The rollup: counts, drift, Environment Check. Deliberately secondary.
+  # ---------------------------------------------------------------------------
+  jira:globalPage:
+    - key: control-room
+      resource: control-room-ui
+      resolver:
+        function: resolver
+      title: AssureLoop
+      layout: native
+
+  # ---------------------------------------------------------------------------
+  # The audit pack a control owner can put on a Confluence page
+  # ---------------------------------------------------------------------------
+  macro:
+    - key: audit-pack
+      resource: macro-ui
+      resolver:
+        function: resolver
+      title: AssureLoop audit pack
+      description: >-
+        Render the audit pack for a control: claim, evidence links, observed time,
+        owner, freshness and open gaps - each row carrying its graph path.
+      icon: resource:macro-ui;icon.svg
+      category: data-and-charts
+      viewportSize: xlarge
+
+  # ---------------------------------------------------------------------------
+  # Unattended scan. Forge schedules only support fiveMinute/hour/day/week, and a
+  # `day` trigger fires at the same clock time only while the app is warm enough to
+  # be precise; shouldRunDailyScan therefore enforces "at least 20 hours apart"
+  # rather than a fixed 06:00 KST, which is what the code actually guarantees.
+  # The gap is an environment variable (ASSUR_SCHEDULED_MIN_HOURS, default 20) so a
+  # site can ask for a tighter cadence without a new release.
+  # ---------------------------------------------------------------------------
+  scheduledTrigger:
+    - key: daily-drift-scan
+      function: daily-scan-fn
+      interval: day
+
+  # ---------------------------------------------------------------------------
+  # Functions
+  # ---------------------------------------------------------------------------
+  function:
+    - key: resolver
+      handler: index.handler
+      # The Control Room's "Scan the registry" runs a whole-programme scan through this
+      # function: 23-26 s measured, against Forge's 25 s default. timeoutSeconds existed
+      # only on the scheduled trigger, so a manual scan on a larger site would have been
+      # cut off mid-read and shown as a failed fetch. 120 s leaves room for a bigger
+      # site than the demo's and still matches the scan's own per-hop caps.
+      timeoutSeconds: 120
+    - key: get-evidence-fn
+      handler: index.actionGetEvidence
+    - key: explain-verdict-fn
+      handler: index.actionExplainVerdict
+    - key: scan-control-fn
+      handler: index.actionScanControl
+    - key: create-remediation-fn
+      handler: index.actionCreateRemediation
+    - key: daily-scan-fn
+      handler: index.scheduledDriftScan
+      timeoutSeconds: 300
+
+  # ---------------------------------------------------------------------------
+  # Forge SQL (control registry, evidence links, provenance, scan history)
+  # ---------------------------------------------------------------------------
+  sql:
+    - key: main
+      engine: mysql
+
+app:
+  id: ari:cloud:ecosystem::app/f671f494-1c70-40d1-a9e7-624b9d45ada2
+  runtime:
+    name: nodejs24.x
+    memoryMB: 512
+    architecture: arm64
+
+resources:
+  - key: issue-panel-ui
+    path: static/issue-panel
+  - key: control-room-ui
+    path: static/control-room
+  - key: macro-ui
+    path: static/macro
+  - key: agent-resource
+    path: resource/agent
+
+permissions:
+  scopes:
+    # --- Forge storage (Forge SQL requires storage:app) ---
+    'storage:app': {}
+
+    # --- Jira REST: the population, comments, remote links, remediation issues ---
+    # read:jira-work  — JQL population, issue, comments, remote links (src/jira/rest.ts)
+    # write:jira-work — remediation issues and the claim label (createJiraIssue, addIssueLabel)
+    # REVIEWED (2026-11-19): impersonation on write:jira-work is privilege the app does
+    # not use (every write is asApp inside a person's request). Removing it is a scope
+    # modification, which Forge treats as a MAJOR version upgrade — every installation,
+    # including the reviewer sites judged from, would have to re-approve mid-submission.
+    # It is scheduled for the post-submission release (after 2026-12-13), not dropped
+    # silently: the review and its reason are in roi5-verification.md §C13.
+    'read:jira-work':
+      allowImpersonation: true
+    'write:jira-work':
+      allowImpersonation: true
+
+    # --- Confluence REST: policy page existence, freshness, space resolution ---
+    # read:page:confluence is the only Confluence REST scope the code calls
+    # (/wiki/api/v2/pages, /wiki/api/v2/spaces). read:confluence-content.all was the v1
+    # content API and is unused; it rides along until the same post-submission upgrade.
+    'read:confluence-content.all':
+      allowImpersonation: true
+    'read:page:confluence':
+      allowImpersonation: true
+    'read:space:confluence':
+      allowImpersonation: true
+
+    # --- Teamwork Graph: one scope per object type on every hop ---
+    # read:graph:issue:jira          — jiraSpaceWorkItems, persisted work-item node
+    # read:graph:issue-comment:jira  — jiraWorkItemComments (Environment Check probe)
+    # read:graph:project:jira        — the Jira space behind a work item
+    # read:graph:page:confluence     — confluencePageOwners (the accountability hop)
+    # read:graph:space:confluence    — atlassianTeamsBySpace
+    # read:graph:user:atlassian      — page owners, comment authors, team members
+    # read:graph:team:atlassian      — atlassianTeamsBySpace, atlassianUserInTeams
+    'read:graph:issue:jira':
+      allowImpersonation: true
+    'read:graph:issue-comment:jira':
+      allowImpersonation: true
+    'read:graph:project:jira':
+      allowImpersonation: true
+    'read:graph:page:confluence':
+      allowImpersonation: true
+    'read:graph:space:confluence':
+      allowImpersonation: true
+    'read:graph:user:atlassian':
+      allowImpersonation: true
+    'read:graph:team:atlassian':
+      allowImpersonation: true

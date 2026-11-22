@@ -1,0 +1,26 @@
+# Build and runtime output
+node_modules/
+dist/
+.forge/
+.tmp/
+*.log
+
+# Local environment
+.env
+.env.*
+
+# Test scaffolding written at test time
+test/bridge.stub.js
+
+# Internal working files: they are not part of the app, and none of them is evidence
+verify-output.txt
+*.mp4
+gcp-hermes-*
+reviews-*/
+external-llm-cross-review.md
+v6.*-verification.md
+roi*-verification.md
+judge-validation.md
+g0-benchmark.md
+scoring-opportunities.md
+preparation-checklist.md

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AssureLoop for Jira: a static demo of the Control Room</title>
+<meta name="description" content="AssureLoop for Jira answers an auditor's question with evidence, provenance and freshness. This page renders the twenty claims the app ships with, in one browser tab, with no Atlassian site and no install.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to the demo</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <p class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">AssureLoop</span>
+      <span class="brand-for">for Jira</span>
+    </p>
+    <p class="brand-tag">Evidence, not spreadsheets.</p>
+  </div>
+</header>
+
+<div class="notice">
+  <div class="wrap">
+    <p><strong>This is a static demo.</strong> No install, no Atlassian site, no server, and nothing here talks to anything. It renders the twenty claims the app ships with, in the states measured on the demo site on 2026-11-20 (18 verified, 1 stale, 1 missing). Pressing <em>Why?</em> shows the read that produced the verdict. The app itself is where a scan runs against your own work items.</p>
+  </div>
+</div>
+
+<main id="main" class="wrap" data-claims="20">
+  <section class="boundary" data-boundary aria-label="What this pack guarantees">
+    <p class="boundary-line">
+      <span class="boundary-label">What this guarantees:</span> fixed rules over the Teamwork Graph and REST, the evidence object and its observation time, and a named blind spot when the app could not look.
+      <button class="link-button" type="button" data-expand aria-expanded="false">Show all</button>
+    </p>
+    <div class="boundary-full" data-boundary-full hidden>
+      <div class="boundary-col">
+        <h3>What this pack guarantees</h3>
+        <ul data-guarantees></ul>
+      </div>
+      <div class="boundary-col">
+        <h3>What this pack does not guarantee</h3>
+        <ul data-not-guaranteed></ul>
+      </div>
+    </div>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Demo surfaces">
+    <button class="tab is-active" role="tab" id="tab-control-room" aria-controls="panel-control-room" aria-selected="true" type="button">Control room</button>
+    <button class="tab" role="tab" id="tab-evidence" aria-controls="panel-evidence" aria-selected="false" type="button">Evidence panel</button>
+    <button class="tab" role="tab" id="tab-pack" aria-controls="panel-pack" aria-selected="false" type="button">Audit pack</button>
+  </nav>
+
+  <section class="panel is-active" id="panel-control-room" role="tabpanel" aria-labelledby="tab-control-room">
+    <header class="panel-head">
+      <div>
+        <h1>Control room</h1>
+        <p class="muted">Rollup, drift, and what this site can see.</p>
+      </div>
+      <p class="scan-meta" data-scan-meta></p>
+    </header>
+
+    <div class="counters" data-counters></div>
+
+    <div class="card">
+      <h2>Where this programme runs</h2>
+      <dl class="kv">
+        <div><dt>Site</dt><dd data-site></dd></div>
+        <div><dt>Project</dt><dd data-project></dd></div>
+        <div><dt>Policy space</dt><dd data-space></dd></div>
+        <div><dt>Programme</dt><dd>12 controls, 20 claims, shipped with the app</dd></div>
+      </dl>
+      <p class="muted small">Binding rewrites the controls' project key and repoints a policy rule only when this site lacks the space it names. The demo's evidence links are retired, because a link to a page this site does not have is not evidence. No new scope is needed.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Claims</h2>
+        <p class="muted small">Press <em>Why?</em> on a row to see the read behind the verdict.</p>
+      </div>
+      <div class="table" data-claims-table aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-evidence" role="tabpanel" aria-labelledby="tab-evidence" hidden>
+    <header class="panel-head">
+      <div>
+        <h1>Evidence panel</h1>
+        <p class="muted">PAY-1: Enable 3-D Secure fallback for card-not-present. Judged when the panel opens, with no scan step in front of you.</p>
+      </div>
+      <p class="scan-meta">assignee Luke Shin, status Done, 2026-11-08</p>
+    </header>
+
+    <div class="evidence-list" data-evidence-panel></div>
+
+    <div class="card">
+      <h2>Close the gaps</h2>
+      <p>One Jira issue per missing or stale claim, assigned through the owner route the app resolved (graph page owner, then issue assignee, then component lead, then control owner), with that route written into the issue description. Re-scanning does not open a second issue for the same claim: each one carries a finding token in its summary.</p>
+      <p class="muted small">On this programme, AC-02 raised PAY-14 and AC-06 raised PAY-13. The other eighteen claims are verified and raise nothing.</p>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-pack" role="tabpanel" aria-labelledby="tab-pack" hidden>
+    <header class="panel-head">
+      <div>
+        <h1>Audit pack</h1>
+        <p class="muted">A workpaper, not a dashboard: one row per claim, and a fingerprint a reviewer can recompute.</p>
+      </div>
+      <p class="scan-meta" data-pack-meta></p>
+    </header>
+
+    <div class="card">
+      <div class="pack-head">
+        <p class="fingerprint" data-fingerprint></p>
+        <div class="pack-actions">
+          <button class="button" type="button" data-verify>Verify fingerprint</button>
+          <button class="button ghost" type="button" data-copy-memo>Copy the audit memo</button>
+        </div>
+      </div>
+      <p class="pack-result" data-pack-result role="status" aria-live="polite"></p>
+      <div class="table pack-table" data-pack-table></div>
+      <p class="muted small">The digest shown is a SHA-256 cut to 128 bits, so 32 hex characters. The full 64-hex value is what the app compares.</p>
+    </div>
+
+    <div class="card">
+      <h2>Unexplained gaps: 1 of 2</h2>
+      <p>AC-06's stale claim carries a recorded exception: a reason, an expiry of 2027-01-31, and a compensating control. An exception never changes a verdict. It moves the gap from unexplained to explained and discloses it on the pack with its author.</p>
+      <p class="muted small">AC-02's missing claim has no exception, so it stays unexplained. That number is what a closing meeting asks about first.</p>
+    </div>
+  </section>
+</main>
+
+<section class="boundary boundary-foot" data-boundary aria-label="What this pack does not guarantee">
+  <div class="wrap">
+    <p class="boundary-line">
+      <span class="boundary-label">What this does not guarantee:</span> work done outside this app, evidence types with no connector here, and whether a recorded exception is substantively right.
+      <button class="link-button" type="button" data-expand aria-expanded="false">Show all</button>
+    </p>
+    <div class="boundary-full" data-boundary-full hidden>
+      <div class="boundary-col">
+        <h3>What this pack guarantees</h3>
+        <ul data-guarantees></ul>
+      </div>
+      <div class="boundary-col">
+        <h3>What this pack does not guarantee</h3>
+        <ul data-not-guaranteed></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>AssureLoop for Jira, Codegeist 2026. This page is generated from <code>src/seed/northwind-pay.ts</code> by <code>scripts/build-demo.mjs</code>; the numbers are the 2026-11-20 measurement on the demo site. No data leaves Atlassian in the product, and none is here to leave.</p>
+  </div>
+</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
