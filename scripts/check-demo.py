@@ -50,8 +50,11 @@ def widest_overflow(page):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--shots", default=str(SHOTS))
+    parser.add_argument("--url", default=None, help="measure a served copy instead of the file on disk")
+    parser.add_argument("--only-shots", action="store_true", help="skip the screenshot steps")
     args = parser.parse_args()
     shots = pathlib.Path(args.shots)
+    target = args.url or PAGE.as_uri()
 
     failures = []
     with sync_playwright() as p:
@@ -61,7 +64,7 @@ def main():
             errors = []
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             page.on("pageerror", lambda e: errors.append(str(e)))
-            page.goto(PAGE.as_uri())
+            page.goto(target)
             page.wait_for_selector('[data-claim="AC-01/jira_work_item"]')
 
             scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
@@ -86,7 +89,7 @@ def main():
             if errors:
                 failures.append(f"{name}: console errors {errors[:3]}")
 
-            if shot:
+            if shot and not args.only_shots:
                 page.click('[data-tab], #tab-pack')
                 page.click('[data-verify]')
                 result = page.inner_text("[data-pack-result]")
