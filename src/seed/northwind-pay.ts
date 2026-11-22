@@ -259,10 +259,13 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           maxAgeDays: 120,
           minCount: 1,
           rule: {
-            approvalPattern: '\\b(approved|approval|lgtm)\\b',
+            // approve / approves / approved, and the noun. The verb form was missing
+            // until v6.50, so the plainest approval a reviewer writes, "I approve this
+            // change", did not match the programme it was written for.
+            approvalPattern: '\\b(approve[sd]?|approval|lgtm)\\b',
             requiresIndependentApprover: true,
             everyItem: true,
-            expectation: 'Each change carries a comment approving it, written by someone other than its assignee.',
+            expectation: 'Each change carries a comment approving it, written by someone other than its assignee or its reporter.',
           },
         },
         {
@@ -288,7 +291,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           rule: {
             pageTitlePrefix: 'Change Management Policy',
             spaceKey: 'ITO',
-            approvalPattern: '\\b(approved|approval|lgtm)\\b',
+            approvalPattern: '\\b(approve[sd]?|approval|lgtm)\\b',
             accountability: 'page_owner_team',
             expectation:
               'The approver is in a team the graph names as accountable for the policy page (or for the space it lives in).',
@@ -310,7 +313,7 @@ export const NORTHWIND_PAY: NorthwindPayDataset = {
           maxAgeDays: 60,
           minCount: 1,
           rule: {
-            approvalPattern: '\\b(approved|approval|lgtm)\\b',
+            approvalPattern: '\\b(approve[sd]?|approval|lgtm)\\b',
             requiresIndependentApprover: true,
             everyItem: true,
             expectation: 'Approval and execution are separated for every production change.',

@@ -81,6 +81,15 @@ import {
 } from '../schema/sql';
 import { NORTHWIND_PAY, jiraIssueAri } from '../seed/northwind-pay';
 import { AUDIT_GUARANTEES } from '../audit/pack';
+import {
+  PERMISSIONS,
+  PermissionError,
+  checkJiraPermission,
+  refusalBody,
+  refusalMessage,
+  requireJiraPermission,
+  type PermissionResult,
+} from '../perm/guard';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -231,6 +240,19 @@ export interface IssueGate {
   gaps: number;
   integrity: { checked: number; incomplete: number; notVisible: number; retried: number; durationMs: number };
   note: string | null;
+  /**
+   * What Jira said when asked whether this account may see the work item.
+   *
+   * Present on every evaluation. A `denied` answer is why the verdict was not
+   * computed (badge NOT_EVALUATED and this object's `detail`); an UNESTABLISHED one
+   * is disclosed and the read went ahead.
+   */
+  permission?: {
+    permission: string;
+    allowed: boolean;
+    cause: PermissionResult['cause'];
+    detail: string;
+  };
 }
 
 const CLAIM_LABEL: Readonly<Record<EvidenceType, string>> = {
@@ -282,9 +304,83 @@ function restFailure(status: number, message: string, scope?: EvidenceScope): Ob
  * word order was reversed, and a noun phrase in between was enough to hide the state.
  * The rule is now two-sided and clause-wide: a state word anywhere in the clause that
  * follows the approval word (up to the sentence end) withdraws it, and the words that
- * precede it are read the same way. test/v640.regressions.cjs pins the 17 cases.
+ * precede it are read the same way. test/v640.regressions.cjs pins the 17 cases of
+ * that round.
+ *
+ * v6.50 adds six shapes a red-team pass found on top of those, and they pull in
+ * opposite directions. Four are mentions or refusals that read as approvals: a pointer
+ * to the approval *process* ("Approval process: see wiki page"), a review of the
+ * checklist that found gaps ("Reviewed the approval checklist and found gaps"), a
+ * word the text itself withdraws ("un-approved draft"), and an approval bounded to part
+ * of the change ("LGTM for the code only, not the release"). The fifth is the opposite
+ * mistake: "I approve this change" is the plainest approval a person writes, and the
+ * pattern the programme shipped with listed the noun and the past participle but not
+ * the verb, so the everyday sentence was not an approval at all. The default pattern
+ * now covers approve / approves / approved, `approvalPatternOf` widens a registry
+ * seeded by an older build the same way, and a pattern an administrator chose is left
+ * exactly as written. test/v650.regressions.cjs pins those six, alongside the 17 and
+ * the 10 from the earlier rounds, so a widening of the verb cannot quietly re-admit a
+ * mention.
  */
+/**
+ * The approval pattern the app judges with when a rule does not carry one, and the
+ * pattern the programme shipped with before v6.50.
+ *
+ * The legacy pattern is recognised so a registry seeded by an older build reads the
+ * same language as a new one: "I approve this change" is the sentence a reviewer
+ * actually writes, and the old default could not match it.
+ */
+export const DEFAULT_APPROVAL_PATTERN = '\\b(approve[sd]?|approval|lgtm)\\b';
+export const LEGACY_DEFAULT_APPROVAL_PATTERN = '\\b(approved|approval|lgtm)\\b';
+
+/**
+ * The pattern a requirement is judged by.
+ *
+ * A pattern an administrator wrote is used as written. A rule with no pattern, or with
+ * the default an older build seeded, gets the current default - so the fix reaches an
+ * existing installation without rewriting a rule it was judged by.
+ */
+export function approvalPatternOf(rule: { approvalPattern?: string }): RegExp {
+  const source = typeof rule.approvalPattern === 'string' ? rule.approvalPattern.trim() : '';
+  if (source.length === 0 || source === LEGACY_DEFAULT_APPROVAL_PATTERN) {
+    return new RegExp(DEFAULT_APPROVAL_PATTERN, 'i');
+  }
+  return new RegExp(source, 'i');
+}
+
 const AFFIRMATIVE_EXCEPTIONS = /\bno\s+(?:objections?|concerns?|blockers?|issues?|problem)\b/gi;
+
+/**
+ * A mention of the approval *process* is not an approval.
+ *
+ * "Approval process: see wiki page" and "Reviewed the approval checklist and found
+ * gaps" both contain the word and neither states an approval; the second says the
+ * opposite. The list is the nouns a process is made of, read only at the start of the
+ * clause that follows the approval word, so "Approved by CAB, per the change process"
+ * stays an approval.
+ */
+const APPROVAL_MENTION_AFTER =
+  /^\s*[?.!,;:\u2014\u2013\-\s]*(?:process(?:es)?|procedures?|polic(?:y|ies)|workflows?|checklists?|matri(?:x|ces)|criteri(?:on|a)|guidelines?|guides?|gates?|requirements?|records?|history)\b/i;
+
+/** "un-approved" and "un approved": the prefix the text itself put in front. */
+const WITHDRAWN_PREFIX = /\bun[-\s]$/i;
+
+/**
+ * An approval bounded to part of the change is not the change's approval.
+ *
+ * "LGTM for the code only, not the release" signs off a code read; the release the
+ * control is about is expressly not approved. Three shapes: a named part followed by
+ * "only", an "only" that a "not" takes back, and a "not the release / not for prod"
+ * that the existing list only caught in its "not for" form.
+ */
+const PARTIAL_APPROVAL_AFTER = new RegExp(
+  [
+    '\\b(?:for|of|to|on)\\s+(?:the\\s+|this\\s+|that\\s+)?(?:code|design|do(?:c|cs|cu(?:ment(?:ation)?)?)|tests?|ui|copy|style|styling|format(?:ting)?|readme|naming|comments?|api\\s+shape)\\b[^.!?\\n]{0,16}\\bonly\\b',
+    '\\bonly\\b[^.!?\\n]{0,24}\\bbut\\s+not\\b',
+    '\\bnot\\s+(?:the|for\\s+(?:the\\s+)?)\\s*(?:release|deploy(?:ment)?|prod(?:uction)?|go-?live)\\b',
+  ].join('|'),
+  'i',
+);
 
 /**
  * Words that turn the approval word into something that has not happened yet.
@@ -297,7 +393,16 @@ const AFFIRMATIVE_EXCEPTIONS = /\bno\s+(?:objections?|concerns?|blockers?|issues
  * one.
  */
 const REQUEST_BEFORE =
-  /\b(?:seek(?:s|ing)?|sought|request(?:s|ed|ing)?|ask(?:s|ed|ing)?|await(?:s|ed|ing)?|pending|waiting|for|need(?:s|ed)?|requir(?:e|es|ed|ing)|rais(?:e|ed|ing)|draft(?:s|ed|ing)?|propos(?:e|ed|es|ing)|intend(?:s|ed|ing)?|consider(?:s|ed|ing)?|tentative(?:ly)?|provisional(?:ly)?|conditionally|possibly|maybe|perhaps|subject\s+to|conditional\s+on|prior\s+to|before|until)\b[^.!?\n]{0,40}$/i;
+  /\b(?:seek(?:s|ing)?|sought|request(?:s|ed|ing)?|ask(?:s|ed|ing)?|await(?:s|ed|ing)?|pending|waiting|for|need(?:s|ed)?|requir(?:e|es|ed|ing)|rais(?:e|ed|ing)|draft(?:s|ed|ing)?|propos(?:e|ed|es|ing)|intend(?:s|ed|ing)?|consider(?:s|ed|ing)?|tentative(?:ly)?|provisional(?:ly)?|conditionally|possibly|maybe|perhaps|subject\s+to|conditional\s+on|prior\s+to|before|until|please)\b[^.!?\n]{0,40}$/i;
+
+/**
+ * A question addressed to the reader is a request for an approval, not one.
+ *
+ * "Can you approve this?" became matchable when the verb form was added to the
+ * default pattern, and without this it would have counted as an approval.
+ */
+const QUESTION_BEFORE =
+  /\b(?:can|could|would|should|shall|will|do|does|did|may|might)\s+(?:you|we|i|they|anyone|someone|somebody)\b[^.!?\n]{0,24}$/i;
 
 const NEGATION_BEFORE =
   /\b(?:not|no|never|cannot|can't|isn't|wasn't|aren't|without|reject(?:ed|s|ing)?|declin(?:ed|es|ing)|deni(?:ed|es|ing)|withheld|withdrawn|withdraw|revoked|revoke|lack(?:s|ing)?|fail(?:ed|s)?|miss(?:ed|ing)?)\b[^.!?\n]{0,48}$/i;
@@ -382,14 +487,50 @@ export function statesApproval(text: string, pattern: RegExp): boolean {
     if (
       NEGATION_BEFORE.test(before) ||
       REQUEST_BEFORE.test(before) ||
+      QUESTION_BEFORE.test(before) ||
+      WITHDRAWN_PREFIX.test(before) ||
       NEGATION_AFTER.test(after) ||
-      APPROVAL_STATE_AFTER.test(clause)
+      APPROVAL_STATE_AFTER.test(clause) ||
+      APPROVAL_MENTION_AFTER.test(clause) ||
+      PARTIAL_APPROVAL_AFTER.test(clause)
     ) {
       continue;
     }
     return true;
   }
   return false;
+}
+
+/**
+ * Who the approver may not be, on one work item.
+ *
+ * The independent-approval claim exists to keep two pairs of hands apart, and a work
+ * item names two people: the assignee who did the work and the reporter who raised
+ * it. A sign-off from either is the work approving itself. Both comparisons are made
+ * here, once, because the panel and the registry scan judge the same claim and must
+ * agree about the same comment.
+ *
+ * An approver with no account id cannot be compared to anyone: that is not a
+ * conflict, and the row says nothing rather than inventing one.
+ */
+export function independenceConflict(
+  authorAccountId: string | null,
+  issue: {
+    key?: string;
+    assigneeAccountId?: string | null;
+    reporterAccountId?: string | null;
+  },
+): { who: string; accountId: string } | null {
+  if (!authorAccountId) {
+    return null;
+  }
+  if (issue.assigneeAccountId && authorAccountId === issue.assigneeAccountId) {
+    return { who: 'its own assignee', accountId: authorAccountId };
+  }
+  if (issue.reporterAccountId && authorAccountId === issue.reporterAccountId) {
+    return { who: 'the person who reported it', accountId: authorAccountId };
+  }
+  return null;
 }
 
 /** A stable, honest URL for the evidence, when the site context gives us one. */
@@ -471,7 +612,7 @@ async function observeApprovalClaim(
 ): Promise<EvidenceObservation> {
   const started = Date.now();
   const rule = parseRule(requirement.rule_json);
-  const pattern = new RegExp(rule.approvalPattern ?? '\\b(approved|approval|lgtm)\\b', 'i');
+  const pattern = approvalPatternOf(rule);
   const { comments, error } = await issueComments(context.issue.key);
   const failures: ObservationFailure[] = [];
   if (error) {
@@ -488,10 +629,14 @@ async function observeApprovalClaim(
   const provenance: ProvenanceHop[] = [];
 
   if (approving) {
-    const selfApproved =
-      rule.requiresIndependentApprover === true &&
-      approving.authorAccountId !== null &&
-      approving.authorAccountId === context.issue.assigneeAccountId;
+    // Segregation of duties is about two pairs of hands, and the work item has two
+    // people on it: the assignee who did the work and the reporter who raised it. A
+    // sign-off by either is the same hands again. v6.50 checks both (the reporter was
+    // not read at all before, so "reported and approved by the same person" passed).
+    const notIndependent =
+      rule.requiresIndependentApprover === true
+        ? independenceConflict(approving.authorAccountId, context.issue)
+        : null;
     const commentAri = `ari:cloud:jira:${context.cloudId}:comment/${approving.id}`;
     candidates.push({
       ari: commentAri,
@@ -501,10 +646,11 @@ async function observeApprovalClaim(
       ownerAccountId: approving.authorAccountId,
       ownerName: approving.authorName,
       ownerActive: approving.authorActive,
-      usable: !selfApproved,
-      unusableReason: selfApproved
-        ? `${context.issue.key} was approved by its own assignee (${approving.authorName ?? 'unknown'}) — segregation of duties is not evidenced`
-        : undefined,
+      usable: notIndependent === null,
+      unusableReason:
+        notIndependent === null
+          ? undefined
+          : `${context.issue.key} was approved by ${notIndependent.who} (${approving.authorName ?? 'unknown'}) — segregation of duties is not evidenced`,
     });
     provenance.push({
       hop: 1,
@@ -1170,7 +1316,7 @@ async function observeIndependenceClaim(
   let graphRows = 0;
 
   // 1. The approval itself — a Jira comment, REST, the only REST fact this claim uses.
-  const pattern = new RegExp(rule.approvalPattern ?? '\\b(approved|approval|lgtm)\\b', 'i');
+  const pattern = approvalPatternOf(rule);
   const { comments, error } = await issueComments(context.issue.key);
   if (error) {
     failures.push(restFailure(error.status, error.message, REST_SCOPES.JIRA_WORK));
@@ -1748,11 +1894,53 @@ export interface GateOptions {
   now?: Date;
   /** The person looking at the gate; Confluence reads fall back to them. */
   accountId?: string | null;
+  /**
+   * Set false only by a caller that has already asked: `closeGapsForIssue` checks
+   * EDIT_ISSUES before it evaluates, and the evaluation itself does not need to ask
+   * BROWSE_PROJECTS again.
+   */
+  checkVisibility?: boolean;
 }
 
 /** Read one work item and judge every claim of the control that owns it. */
 export async function evaluateIssueGate(options: GateOptions): Promise<IssueGate> {
   const started = Date.now();
+  // Visibility first. A verdict about a work item the person may not open is not
+  // theirs to have, and a confirmed denial is reported as such rather than as an
+  // unreadable item or a clean gate. A check that did not answer is disclosed and the
+  // read goes ahead: the read itself is the authority on visibility, and the engine
+  // already reports a 403 as NOT_VISIBLE with the scope that fixes it.
+  const visibility =
+    options.checkVisibility === false
+      ? null
+      : await checkJiraPermission({ permission: PERMISSIONS.BROWSE_PROJECTS, issueKey: options.issueKey });
+  const permissionField = visibility
+    ? {
+        permission: visibility.permission,
+        allowed: visibility.allowed,
+        cause: visibility.cause,
+        detail: visibility.detail,
+      }
+    : undefined;
+  if (visibility?.cause === 'DENIED') {
+    return {
+      guarantees: AUDIT_GUARANTEES,
+      issue: null,
+      control: null,
+      suggestedControls: [],
+      badge: {
+        state: 'NOT_EVALUATED',
+        label: 'Not visible to you',
+        detail: refusalMessage(visibility, 'read'),
+      },
+      counts: { VERIFIED: 0, STALE: 0, MISSING: 0, NOT_VISIBLE: 0, INCOMPLETE: 0 },
+      requirements: [],
+      gaps: 0,
+      integrity: { checked: 0, incomplete: 0, notVisible: 0, retried: 0, durationMs: Date.now() - started },
+      note: refusalMessage(visibility, 'read'),
+      permission: permissionField,
+    };
+  }
   const { issue, error } = await getIssue(options.issueKey);
   if (!issue || error) {
     return {
@@ -1946,6 +2134,7 @@ export async function evaluateIssueGate(options: GateOptions): Promise<IssueGate
       retried,
       durationMs: Date.now() - started,
     },
+    permission: permissionField,
     note: resolution.claimed
       ? null
       : `No control label is on ${issue.key}; showing ${control.code} as a template because ` +
@@ -2187,6 +2376,13 @@ export async function closeGapsForIssue(options: {
   accountId?: string | null;
   /** Window for the remediation due date. The action's input is honoured now. */
   dueInDays?: number;
+  /**
+   * `skip` is for the test harness and for a caller that has already asked. Every
+   * real path - the panel's button and the Rovo CREATE action - leaves this at
+   * `check`: raising remediation issues is a write, and it is made only for an
+   * account Jira says may edit the work item.
+   */
+  permission?: 'check' | 'skip';
   createIssue?: (input: {
     projectKey: string;
     summary: string;
@@ -2196,6 +2392,11 @@ export async function closeGapsForIssue(options: {
     labels: readonly string[];
   }) => Promise<{ key: string; id: string }>;
 }): Promise<CloseGapsReport> {
+  if (options.permission !== 'skip') {
+    // Before anything is read, written or reported: may this person edit the item?
+    // A refusal throws with the sentence the screen shows, and nothing is created.
+    await requireJiraPermission({ permission: PERMISSIONS.EDIT_ISSUES, issueKey: options.issueKey });
+  }
   const { createJiraIssue } = await import('../jira/rest');
   const create = options.createIssue ?? createJiraIssue;
   const dueInDays = Number.isFinite(options.dueInDays) && (options.dueInDays ?? 0) > 0 ? Math.trunc(options.dueInDays as number) : 14;

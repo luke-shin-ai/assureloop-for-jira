@@ -76,13 +76,32 @@ import { buildTrace } from './trace/graph';
 import { findOrphanEvidence, type ClaimedPage, type OrphanScan } from './audit/orphans';
 import {
   closeGapsForIssue,
+  approvalPatternOf,
   evaluateIssueGate,
+  independenceConflict,
   registryControls,
   observeIndependenceClaim,
   registryRequirements,
   resolvePageOwner,
   statesApproval,
 } from './engine/gate';
+import {
+  validateControlCode,
+  validateJiraLabel,
+  validateMaxAgeDays,
+  validateProjectKey,
+  validateText,
+} from './engine/input';
+import {
+  PERMISSIONS,
+  PermissionError,
+  checkJiraPermission,
+  refusalBody,
+  refusalMessage,
+  requireJiraPermission,
+  type PermissionResult,
+} from './perm/guard';
+import { importCustomControls, saveCustomControl } from './registry/custom';
 import { runEnvironmentCheck, type EnvironmentReport } from './engine/envcheck';
 import {
   CONFIG_DEMO_SEEDED,
@@ -452,7 +471,7 @@ async function observeComments(
   const started = Date.now();
   const issues = await populationFor(context, control);
   const rule = parseRule(requirement.rule_json);
-  const pattern = new RegExp(rule.approvalPattern ?? '\\b(approved|approval|lgtm)\\b', 'i');
+  const pattern = approvalPatternOf(rule);
   const candidates: EvidenceCandidate[] = [];
   const provenance: ProvenanceHop[] = [];
   // Start from the population read, not from an empty list. When the JQL behind the
@@ -494,9 +513,9 @@ async function observeComments(
       continue;
     }
     const selfApproved =
-      rule.requiresIndependentApprover === true &&
-      approving.authorAccountId !== null &&
-      approving.authorAccountId === issue.assigneeAccountId;
+      rule.requiresIndependentApprover === true
+        ? independenceConflict(approving.authorAccountId, issue)
+        : null;
     const commentAri = `ari:cloud:jira:${context.cloudId}:comment/${approving.id}`;
     candidates.push({
       ari: commentAri,
@@ -508,7 +527,7 @@ async function observeComments(
       ownerActive: approving.authorActive,
       usable: !selfApproved,
       unusableReason: selfApproved
-        ? `${issue.key} was approved by its own assignee (${approving.authorName ?? 'unknown'}) — segregation of duties is not evidenced`
+        ? `${issue.key} was approved by ${selfApproved.who} (${approving.authorName ?? 'unknown'}) — segregation of duties is not evidenced`
         : undefined,
     });
     hop += 1;
@@ -956,9 +975,9 @@ async function observeIndependence(
   const pattern = (() => {
     try {
       const rule = JSON.parse(requirement.rule_json) as { approvalPattern?: string };
-      return new RegExp(rule.approvalPattern ?? '\\b(approved|approval|lgtm)\\b', 'i');
+      return approvalPatternOf(rule);
     } catch {
-      return /\b(approved|approval|lgtm)\b/i;
+      return approvalPatternOf({});
     }
   })();
   const issues = [...(await populationFor(context, control))].sort(
@@ -992,6 +1011,10 @@ async function observeIndependence(
           assigneeAccountId: issue.assigneeAccountId,
           assigneeName: issue.assigneeName,
           assigneeActive: issue.assigneeActive,
+          // The reporter travels too: the claim compares the approver against both
+          // people named on the work item.
+          reporterAccountId: issue.reporterAccountId ?? null,
+          reporterName: issue.reporterName ?? null,
           projectKey: control.jira_project_key,
           projectId: null,
           created: issue.updated,
@@ -1484,11 +1507,18 @@ export async function createRemediations(options: {
   controlCode?: string;
   dueInDays?: number;
   context: Record<string, unknown>;
+  /** `skip` for a caller that has already asked ADMINISTER. */
+  permission?: 'check' | 'skip';
 }): Promise<{
   created: Array<{ controlCode: string; issueKey: string; assignee: string | null; dueDate: string; reason: string }>;
   skipped: Array<{ controlCode: string; why: string }>;
 }> {
   await ensureSchema();
+  // Closing a control's gaps opens Jira issues in that control's name and records them
+  // in the registry: asked once, before anything is created.
+  if (options.permission !== 'skip') {
+    await requireJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  }
   const report = {
     created: [] as Array<{ controlCode: string; issueKey: string; assignee: string | null; dueDate: string; reason: string }>,
     skipped: [] as Array<{ controlCode: string; why: string }>,
@@ -1622,6 +1652,12 @@ export async function bindProgramme(options: {
   spaceKey?: string | null;
   accountId?: string | null;
   cloudId?: string | null;
+  /**
+   * `skip` is for a caller that has already asked (the one-click onboarding asks once
+   * for the whole flow). Every resolver leaves this at the default: binding rewrites
+   * the programme, which is a site administrator's change.
+   */
+  permission?: 'check' | 'skip';
 }): Promise<{
   bound: boolean;
   projectKey: string;
@@ -1634,10 +1670,18 @@ export async function bindProgramme(options: {
   unresolvedPages: string[];
 }> {
   await ensureSchema();
-  const projectKey = options.projectKey.trim();
-  if (!projectKey) {
-    throw new Error('A project key is required to bind the programme.');
+  if (options.permission !== 'skip') {
+    // The programme is the app's configuration for the whole site: rewriting it is an
+    // administrator's act, and Jira is asked before the first write.
+    await requireJiraPermission({ permission: PERMISSIONS.ADMINISTER });
   }
+  // The key is read into JQL, so it is validated here rather than trusted: a quote in
+  // it would close the query string in `project = "..."`.
+  const validated = validateProjectKey(options.projectKey);
+  if (!validated.ok) {
+    throw new Error(validated.why);
+  }
+  const projectKey: string = validated.value;
   const spaceKey = options.spaceKey?.trim() || null;
   let controls = 0;
   let requirements = 0;
@@ -1812,14 +1856,21 @@ export async function seedDemo(options: {
   asAccountId?: string | null;
   /** Project to seed into; defaults to the bound project, then the demo PAY. */
   projectKey?: string;
+  /** `skip` for a caller that has already asked ADMINISTER. */
+  permission?: 'check' | 'skip';
 }) {
   await ensureSchema();
+  // Seeding writes the whole control registry: an administrator's act.
+  if (options.permission !== 'skip') {
+    await requireJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  }
   const cloudId = cloudIdOf(options.context);
   const binding = parseBinding(await getConfig(CONFIG_SITE_BINDING));
 
   // Seeding used to require a project called PAY, which made the whole path a
   // hardcoded demo. It now takes the project it was given, else the bound one, else
-  // the demo key, else the first project this app can read.
+  // the demo key, else the first project this app can read. Every candidate is
+  // validated before it reaches a JQL string.
   const candidates = [
     ...new Set(
       [options.projectKey, binding?.projectKey, NORTHWIND_PAY.jiraProjectKey].filter(
@@ -1829,15 +1880,21 @@ export async function seedDemo(options: {
   ];
   let projectKey: string | null = null;
   for (const candidate of candidates) {
-    const probe = await jqlSearch(`project = "${candidate}" ORDER BY created ASC`, 1).catch(() => []);
+    const validated = validateProjectKey(candidate);
+    if (!validated.ok) {
+      continue;
+    }
+    const probe = await jqlSearch(`project = "${validated.value}" ORDER BY created ASC`, 1).catch(() => []);
     if (probe.length > 0) {
-      projectKey = candidate;
+      projectKey = validated.value;
       break;
     }
   }
   if (!projectKey) {
     const projects = await listProjects();
-    projectKey = projects.projects[0]?.key ?? null;
+    const first = projects.projects[0]?.key;
+    const validated = first ? validateProjectKey(first) : { ok: false as const, why: 'no project' };
+    projectKey = validated.ok ? validated.value : null;
   }
   if (!projectKey) {
     return {
@@ -1913,6 +1970,8 @@ export async function onboardSite(options: {
   projectKey: string;
   spaceKey?: string | null;
   accountId?: string | null;
+  /** `skip` for a caller that has already asked ADMINISTER. */
+  permission?: 'check' | 'skip';
 }): Promise<{
   bound: boolean;
   projectKey: string;
@@ -1923,20 +1982,27 @@ export async function onboardSite(options: {
   why?: string;
 }> {
   await ensureSchema();
+  // One click that binds the programme, creates sample changes and scans. It writes
+  // configuration and three work items, so it is asked for once here, before the
+  // first of them.
+  if (options.permission !== 'skip') {
+    await requireJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  }
   const accountId = options.accountId ?? accountIdOf(options.context) ?? null;
-  const projectKey = options.projectKey.trim();
-  if (!projectKey) {
+  const validated = validateProjectKey(options.projectKey);
+  if (!validated.ok) {
     return {
       bound: false,
-      projectKey,
+      projectKey: typeof options.projectKey === 'string' ? options.projectKey : '',
       spaceKey: null,
       created: [],
       skipped: [],
       scan: null,
-      why: 'Choose a project to bind the programme to.',
+      why: validated.why,
     };
   }
-  await bindProgramme({ projectKey, spaceKey: options.spaceKey ?? null, accountId });
+  const projectKey = validated.value;
+  await bindProgramme({ projectKey, spaceKey: options.spaceKey ?? null, accountId, permission: 'skip' });
 
   const created: Array<{ key: string; done: boolean; status: string | null; note: string }> = [];
   const skipped: string[] = [];
@@ -2090,6 +2156,11 @@ resolver.define('explainClaim', async (request) => {
     siteUrl,
     accountId,
   });
+  if (gate.permission?.cause === 'DENIED') {
+    // The person may not see this work item, so they are not shown the receipts of a
+    // verdict either.
+    return { found: false, denied: true, permission: gate.permission.permission, note: gate.note };
+  }
   const requirement = gate.requirements.find((row) => row.requirementId === requirementId) ?? null;
   if (!requirement) {
     return { found: false, note: 'That claim is not part of this work item.' };
@@ -2168,6 +2239,10 @@ resolver.define('controlRoom', async (request) => {
     () => [] as RequirementRow[],
   );
   const evidenceTypeById = new Map(requirementRows.map((row) => [row.id, row.evidence_type]));
+  // Which of the registry's controls this app shipped, and which a person added. The
+  // two are listed separately: a custom control is a change to the programme, and the
+  // person who made it should see it named as theirs.
+  const shippedCodes = new Set(NORTHWIND_PAY.controls.map((entry) => entry.code));
 
   // "Unexplained gaps" is the number a closing meeting asks about: a gap carried
   // with a reason, an owner and an expiry is explained; the rest is what nobody has
@@ -2287,7 +2362,7 @@ resolver.define('controlRoom', async (request) => {
     ),
     integrity,
     gaps,
-    controls: controls.slice(0, 12).map((control) => {
+    controls: controls.slice(0, 24).map((control) => {
       const controlFindings = byControl.get(control.id) ?? [];
       const worst =
         controlFindings.find((finding) => finding.state === 'MISSING') ??
@@ -2311,6 +2386,26 @@ resolver.define('controlRoom', async (request) => {
     }),
     remediations,
     environment,
+    // What this site added to the programme, with the claims each one carries. A person
+    // who adds a control needs to see what the next scan will judge, in the same words
+    // the pack uses.
+    customControls: controls
+      .filter((control) => !shippedCodes.has(control.code))
+      .map((control) => ({
+        code: control.code,
+        name: control.name,
+        regulationRef: control.regulation_ref,
+        jiraProjectKey: control.jira_project_key,
+        jiraLabel: control.jira_label,
+        claims: requirementRows
+          .filter((row) => row.control_id === control.id)
+          .map((row) => ({
+            evidenceType: row.evidence_type,
+            maxAgeDays: row.max_age_days,
+            everyItem: parseRule(row.rule_json).everyItem === true,
+            expectation: parseRule(row.rule_json).expectation ?? null,
+          })),
+      })),
     currentUser: principalOf(asRecord(request.context)),
   };
 });
@@ -2369,14 +2464,26 @@ resolver.define('closeGapsForIssue', async (request) => {
   if (!issueKey) {
     return { created: [], skipped: [{ requirement: '-', why: 'No work item given.' }], routes: [] };
   }
-  return closeGapsForIssue({
-    issueKey,
-    controlCode: stringField(payload, 'controlCode'),
-    cloudId,
-    siteUrl,
-    accountId,
-    dueInDays: numberField(payload, 'dueInDays'),
-  });
+  try {
+    return await closeGapsForIssue({
+      issueKey,
+      controlCode: stringField(payload, 'controlCode'),
+      cloudId,
+      siteUrl,
+      accountId,
+      dueInDays: numberField(payload, 'dueInDays'),
+    });
+  } catch (cause) {
+    if (cause instanceof PermissionError) {
+      return {
+        created: [],
+        routes: [],
+        skipped: [{ requirement: 'all claims', why: refusalMessage(cause.result) }],
+        ...refusalBody(cause.result),
+      };
+    }
+    throw cause;
+  }
 });
 
 /** Claim a work item for a control: the label makes the evidence permanent. */
@@ -2386,6 +2493,15 @@ resolver.define('claimIssue', async (request) => {
   const controlCode = stringField(payload, 'controlCode');
   if (!issueKey) {
     return { claimed: false, why: 'No work item given.' };
+  }
+  // Writing a label onto someone's work item is an edit to it: the person has to be
+  // allowed to edit that item, not merely to see it.
+  const permission = await checkJiraPermission({
+    permission: PERMISSIONS.EDIT_ISSUES,
+    issueKey,
+  });
+  if (!permission.allowed) {
+    return { claimed: false, ...refusalBody(permission) };
   }
   const controls = await registryControls();
   const control = controlCode
@@ -2472,7 +2588,59 @@ resolver.define('bindProgramme', async (request) => {
       cloudId: contextOf(request).cloudId,
     });
   } catch (cause) {
+    if (cause instanceof PermissionError) {
+      return { bound: false, ...refusalBody(cause.result) };
+    }
     return { bound: false, why: cause instanceof Error ? cause.message : String(cause) };
+  }
+});
+
+/**
+ * A custom control: the small form in the Control Room and its JSON import.
+ *
+ * Both are writes to the programme, so both ask Jira for ADMINISTER first. The
+ * validation and the write itself live in registry/custom.ts, which refuses a bad
+ * input with the sentence the screen shows instead of correcting it.
+ */
+resolver.define('upsertControl', async (request) => {
+  await ensureSchema();
+  const payload = asRecord(request.payload);
+  const permission = await checkJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  if (!permission.allowed) {
+    return { saved: false, ...refusalBody(permission) };
+  }
+  try {
+    const binding = parseBinding(await getConfig(CONFIG_SITE_BINDING));
+    return await saveCustomControl(payload, { projectKeyFallback: binding?.projectKey ?? null });
+  } catch (cause) {
+    return {
+      saved: false,
+      code: stringField(payload, 'code') ?? null,
+      why: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+});
+
+/** The JSON import: the same validation, one row at a time, with a report per row. */
+resolver.define('importControls', async (request) => {
+  await ensureSchema();
+  const payload = asRecord(request.payload);
+  const permission = await checkJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  if (!permission.allowed) {
+    return { imported: 0, failed: 0, results: [], ...refusalBody(permission) };
+  }
+  try {
+    const binding = parseBinding(await getConfig(CONFIG_SITE_BINDING));
+    return await importCustomControls(payload.json ?? payload.controls ?? payload, {
+      projectKeyFallback: binding?.projectKey ?? null,
+    });
+  } catch (cause) {
+    return {
+      imported: 0,
+      failed: 0,
+      results: [],
+      why: cause instanceof Error ? cause.message : String(cause),
+    };
   }
 });
 
@@ -2554,12 +2722,19 @@ resolver.define('onboardSite', async (request) => {
   await ensureSchema();
   const { accountId } = contextOf(request);
   const payload = asRecord(request.payload);
-  return onboardSite({
-    context: asRecord(request.context),
-    projectKey: stringField(payload, 'projectKey') ?? '',
-    spaceKey: stringField(payload, 'spaceKey') ?? null,
-    accountId,
-  });
+  try {
+    return await onboardSite({
+      context: asRecord(request.context),
+      projectKey: stringField(payload, 'projectKey') ?? '',
+      spaceKey: stringField(payload, 'spaceKey') ?? null,
+      accountId,
+    });
+  } catch (cause) {
+    if (cause instanceof PermissionError) {
+      return { bound: false, created: [], skipped: [], scan: null, ...refusalBody(cause.result) };
+    }
+    throw cause;
+  }
 });
 
 resolver.define('verifyFingerprint', async (request) => {
@@ -2606,6 +2781,12 @@ resolver.define('verifyFingerprint', async (request) => {
 resolver.define('recordException', async (request) => {
   await ensureSchema();
   const { accountId } = contextOf(request);
+  // An exception is how a gap is carried on purpose: a site administrator's act, with
+  // a reason and an expiry. Asked before the input is even read.
+  const permission = await checkJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  if (!permission.allowed) {
+    return { recorded: false, ...refusalBody(permission) };
+  }
   const payload = asRecord(request.payload);
   const controlCode = stringField(payload, 'controlCode');
   const evidenceType = stringField(payload, 'evidenceType');
@@ -2639,14 +2820,27 @@ resolver.define('recordException', async (request) => {
 
 resolver.define('withdrawException', async (request) => {
   await ensureSchema();
+  const { accountId } = contextOf(request);
+  const permission = await checkJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  if (!permission.allowed) {
+    return { withdrawn: false, ...refusalBody(permission) };
+  }
   const payload = asRecord(request.payload);
   const controlCode = stringField(payload, 'controlCode');
   const evidenceType = stringField(payload, 'evidenceType');
   if (!controlCode || !evidenceType) {
     return { withdrawn: false, why: 'Name the control and the claim.' };
   }
-  const withdrawn = await withdrawClaimException(claimKeyFor(controlCode, evidenceType));
-  return { withdrawn, claimKey: claimKeyFor(controlCode, evidenceType) };
+  const claimKey = claimKeyFor(controlCode, evidenceType);
+  // The actor goes on the row: "the exception was withdrawn" without a name is not an
+  // audit trail, and the pack shows who ended it.
+  const withdrawn = await withdrawClaimException(claimKey, accountId ?? null);
+  return {
+    withdrawn,
+    claimKey,
+    withdrawnBy: withdrawn ? accountId ?? null : null,
+    why: withdrawn ? null : `No active exception is recorded against ${claimKey}.`,
+  };
 });
 
 /** The reverse scan on demand, for the Control Room card and for a reviewer. */
@@ -2746,15 +2940,35 @@ resolver.define('auditMemo', async (request) => {
   return { memo: pack.memo, fingerprint: pack.fingerprint, claims: pack.claims.length };
 });
 
-resolver.define('seedDemo', async (request) => seedDemo({ context: asRecord(request.context) }));
+resolver.define('seedDemo', async (request) => {
+  try {
+    return await seedDemo({ context: asRecord(request.context) });
+  } catch (cause) {
+    if (cause instanceof PermissionError) {
+      return { seeded: false, result: null, reason: refusalMessage(cause.result), ...refusalBody(cause.result) };
+    }
+    throw cause;
+  }
+});
 
 /** Back-compat for the older macro/UI: close gaps for a whole control. */
-resolver.define('closeGaps', async (request) =>
-  createRemediations({
-    controlCode: stringField(asRecord(request.payload), 'controlCode'),
-    context: asRecord(request.context),
-  }),
-);
+resolver.define('closeGaps', async (request) => {
+  try {
+    return await createRemediations({
+      controlCode: stringField(asRecord(request.payload), 'controlCode'),
+      context: asRecord(request.context),
+    });
+  } catch (cause) {
+    if (cause instanceof PermissionError) {
+      return {
+        created: [],
+        skipped: [{ controlCode: stringField(asRecord(request.payload), 'controlCode') ?? 'all controls', why: refusalMessage(cause.result) }],
+        ...refusalBody(cause.result),
+      };
+    }
+    throw cause;
+  }
+});
 
 export const handler = resolver.getDefinitions();
 
@@ -2942,6 +3156,9 @@ export async function actionCreateRemediation(event: unknown, context?: unknown)
     });
     return { ...report, note: `${report.created.length} remediation issue(s) created from the latest scan.` };
   } catch (cause) {
+    if (cause instanceof PermissionError) {
+      return { error: refusalMessage(cause.result), denied: true, permission: cause.result.permission };
+    }
     return { error: cause instanceof Error ? cause.message : String(cause) };
   }
 }
@@ -3015,8 +3232,13 @@ export async function scheduledDriftScan(event: unknown) {
   }
 }
 
-export async function setScanPrincipal(accountId: string): Promise<void> {
+export async function setScanPrincipal(accountId: string, options: { permission?: 'check' | 'skip' } = {}): Promise<void> {
   await ensureSchema();
+  // The principal is whose eyes every unattended scan borrows. Naming one is a site
+  // administrator's act: the scan reads Confluence and the graph as that person.
+  if (options.permission !== 'skip') {
+    await requireJiraPermission({ permission: PERMISSIONS.ADMINISTER });
+  }
   await setConfig(CONFIG_SCAN_PRINCIPAL, accountId);
 }
 

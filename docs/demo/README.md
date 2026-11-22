@@ -16,6 +16,7 @@ Pages (branch `main`, folder `/docs`).
 | Evidence panel | PAY-1 judged live against four claims, the product's front door |
 | Audit pack | The workpaper: twenty rows, a SHA-256 fingerprint, **Verify fingerprint** (recomputed in the browser over the rows on the page) and **Copy the audit memo** |
 | Trust boundary | What the pack guarantees and what it does not, collapsed to one line above and below the page, with **Show all** |
+| Custom controls | A control of your own, added in this tab: the form (code, name, evidence type, window, every item) and a JSON paste, validated exactly what the Control Room validates, with the reason for every refused row. The rows live in the tab and claim no verdict: a page with no Jira site behind it has nothing to scan |
 
 ## Why the numbers are the app's numbers
 

@@ -11,7 +11,7 @@ could not look, instead of "no evidence".
 evidence types with no connector on the site, and whether a recorded exception is substantively
 right. Those are stated on every surface, not discovered by a reviewer.
 
-**Measured 2026-11-20 (v6.48.0, demo site; the source in this repository is v6.49, see §2):** 20 claims across 12 controls, 18 verified, 1 stale, 1 missing, 0 not visible, 0 not checked in 22,989 ms, `graph 17 read(s)`; audit-pack fingerprint
+**Measured 2026-11-20 (v6.48.0, demo site; the source in this repository is v6.50, see §2):** 20 claims across 12 controls, 18 verified, 1 stale, 1 missing, 0 not visible, 0 not checked in 22,989 ms, `graph 17 read(s)`; audit-pack fingerprint
 `d851a46a6c4af955`-class value over 20 rows and 18 hashed fields, `Verify fingerprint -> VERIFIED MATCH`.
 (The displayed digest is now 128 bits, so the value printed on a new pack is 32 hex characters long. The 2026-11-20 pack printed 16.)
 
@@ -19,7 +19,7 @@ right. Those are stated on every surface, not discovered by a reviewer.
 
 | Criterion | The evidence, in one line |
 |---|---|
-| **Technological Implementation** | 9 idempotent tables, 20 resolver keys, **489 assertions** (`npm run smoke`, no site needed), a 6-second cap on every graph hop, retry isolation per call chain, and one deterministic verdict function shared by three surfaces |
+| **Technological Implementation** | 9 idempotent tables, 22 resolver keys, **625 assertions** (`npm run smoke`, no site needed), a Jira permission check as the first line of every write, a 6-second cap on every graph hop, retry isolation per call chain, and one deterministic verdict function shared by three surfaces |
 | **Design** | Five states that are the product logic (`VERIFIED / STALE / MISSING / NOT_VISIBLE / INCOMPLETE`), the four surfaces (issue panel, Control Room, Confluence macro, Rovo agent) share one visual language, empty and error states are designed (nothing to judge yet / cannot see this / not checked), and an empty site reaches a judged one in one click |
 | **Potential Impact** | 12 controls × 2-3 h of manual work per quarter is the **estimate** it replaces; what is measured is the read: 20 claims in 23 s, 37 pages no control claims found by the reverse scan |
 | **Innovation / Idea** | `MISSING` requires a read that finished and saw nothing; a claim over a population prints how much of it was read; a universal claim fails on one unqualified object; the app publishes what it does **not** guarantee; and the cross-product claim `approval_independence` has no REST answer: it queries the policy page's owner, that owner's team and the team membership from Teamwork Graph, and anchors those hops in the evidence trace with the observation time of each. Where that read does not come back, the claim says `not visible` instead of inventing a finding |
@@ -33,12 +33,17 @@ Everything below runs in a browser tab or a terminal, with no Atlassian site, no
 |---|---|---|
 | The product itself: the Control Room's 20 claims, an Evidence panel with **Why?**, the audit pack, the trust boundary | `docs/demo/index.html` (open the file) or <https://luke-shin-ai.github.io/assureloop-for-jira/demo/>. Static HTML, no server, no build | 2 min |
 | The numbers in this README against the code that produces them | `npm run check:claims` | 30 s |
-| Every claim the engine rests on | `npm run smoke`: 489 assertions in 12 files, no site | 60 s |
+| Every claim the engine rests on | `npm run smoke`: 625 assertions in 13 files, no site | 60 s |
 | The 4:24 demo, narrated | <https://youtu.be/h7eMQPS6ioI> (public) | 4 min |
 | The eight screenshots the submission uses | `docs/screenshots/` | 3 min |
 | The audit pack rendered by a real Confluence macro | the demo site, page `ITO/AC-01 audit pack` | 1 min |
 
-The static demo is generated from the same rule data the app ships (`src/seed/northwind-pay.ts`), so a claim you see there is the claim the engine judges; it is a rendering of the shipped programme, not a mock of a screenshot.
+The static demo is a **recorded run**, not a live one: it renders the 2026-11-20 measurement of the
+demo site, generated from the same rule data the app ships (`src/seed/northwind-pay.ts`), so a claim
+you see there is the claim the engine judges and the states are the ones that scan produced. It is
+also the one place a visitor can add a custom control and paste a JSON list without a site: the form
+validates exactly what the Control Room's form validates, keeps the rows in the tab, and claims no
+verdict for them, because a page with no Jira site behind it has nothing to judge.
 
 ![The Control Room after a scan: five counters, one bound project, twelve controls and the audit card](docs/screenshots/01-control-room-counters-1920.png)
 
@@ -108,7 +113,70 @@ withdrawal (`not`, `rejected`, `withdrawn`, `revoked`) and a state that has not 
 stop a match, in either word order. `Approval from Legal pending`, `Approval: none`,
 `Approval was sought`, `Tentatively approved` and `approved, but not for prod` are not
 approvals; `Approved, and no further review is needed` and `No objections - approved` are.
-Twenty-seven cases are pinned in `test/v640.regressions.cjs`.
+
+`test/v640.regressions.cjs` pins that round: **17 rejections and 10 acceptances**.
+`test/v650.regressions.cjs` adds **six shapes a red-team pass found on top of those**, and
+they pull in opposite directions: a mention of the approval *process* (`Approval process:
+see wiki page`), a review of the checklist that found gaps (`Reviewed the approval
+checklist and found gaps`), a word the text itself withdraws (`un-approved draft`), and an
+approval bounded to part of the change (`LGTM for the code only, not the release`) are all
+refused; `I approve this change` and `I approved this change` are approvals, which the
+shipped pattern could not match because it listed the noun and the past participle and not
+the verb. The default is now `approve / approves / approved`, and a registry seeded by an
+older build stores the old default: that exact string is recognised and widened when it is
+read, while a pattern an administrator wrote is used as written. The 17 earlier rejections
+are re-run against the widened pattern, so a wider verb cannot quietly re-admit a request.
+
+### Who may write
+
+Every write asks Jira first, as the person pressing the button:
+`GET /rest/api/3/mypermissions?permissions=<name>&issueKey=<key>` read as the user. Three
+answers, and they are not interchangeable:
+
+| Answer | What the app does |
+|---|---|
+| granted | the write proceeds |
+| denied | the write is refused, before any change, with the permission to ask for and who to ask |
+| could not ask (a 4xx/5xx, a transport failure, an answer that does not state the permission) | the write is refused too: "I could not ask" is not "yes" |
+
+`ADMINISTER` covers the programme (bind, seed, one-click onboarding, close gaps, record and
+withdraw an exception, set the scan principal, add a custom control, import a list).
+`EDIT_ISSUES` on the work item covers claiming it for a control and closing its gaps. A read
+asks `BROWSE_PROJECTS` first: a confirmed denial returns `Not visible to you` with the
+permission named and no verdict at all, while a check that could not be made is disclosed
+and the read goes ahead, because the read itself is the authority on visibility and the
+engine already reports a 403 as `NOT_VISIBLE` with the scope that fixes it. No new Forge
+scope is used. A withdrawal also records who made it: the exception row keeps
+`withdrawn_by` and `withdrawn_at`, so a gap that was carried and then let go has a name and
+a date on it.
+
+### Segregation of duties: both people on the item
+
+The independent-approval claim keeps two pairs of hands apart, and a work item names two
+people: the assignee who did the work and the reporter who raised it. An approval from
+either is the work approving itself, and both are compared (the reporter was not read at
+all before v6.50). The row says which one it was: `was approved by its own assignee` or
+`was approved by the person who reported it`.
+
+### Custom controls
+
+The twelve shipped controls answer DORA and SOX change management; a team with a control of
+its own adds it in the Control Room, as a small form (code, name, evidence type, freshness
+window, `everyItem`) or as a JSON list, and the JSON import reports every row it refused
+with the sentence for that row. A custom control is judged by the same engine and shows the
+same row on the pack. The code, the Jira label and the window are validated, one claim per
+evidence type is written (a second save updates it rather than adding a duplicate for the
+scanner to judge twice), and the rule is stored in the same `rule_json` the shipped
+programme uses, so nothing about the judgement is implied rather than written down.
+
+### A project key is a whitelist
+
+A project key is read into a JQL string (`project = "PAY"`), so it is the one input that can
+change what a query means. It must match `^[A-Z][A-Z0-9_]+$`: a quote, a space, an `OR` or
+anything else is refused with the reason and never escaped into the query. The same
+validation runs on binding, on the one-click onboarding, on the demo seed and on a custom
+control's project, and `test/v650.regressions.cjs` proves that an injected key produces no
+JQL request at all.
 
 ## 2. Status
 
@@ -117,7 +185,7 @@ Twenty-seven cases are pinned in `test/v640.regressions.cjs`.
 | `manifest.yml` | **Valid**: `forge lint` -> *No issues found* (app registered) |
 | Forge SQL schema + query helpers | Written (9 tables, idempotent DDL) |
 | Teamwork Graph access layer (curated + persisted) | Written; persisted traversal enriches the trace when its `queryKey` is registered |
-| Verdict engine (5 states, deterministic) | **Written and tested** (`npm run smoke`, 489 assertions) |
+| Verdict engine (5 states, deterministic) | **Written and tested** (`npm run smoke`, 625 assertions) |
 | Retry/backoff + failure classification | **Written** (3 attempts, exponential backoff, `Retry-After`) |
 | Evidence Gate (issue panel) | **Written**: live judgement per work item, trace, gap closure |
 | Provenance Trace (SVG) | **Written**: node/link per hop with ARI, relation, observed time |
@@ -132,7 +200,7 @@ Twenty-seven cases are pinned in `test/v640.regressions.cjs`.
 | Fingerprint re-verification | **Written, verified live**: `Verify fingerprint` recomputes the pack's SHA-256 and shows VERIFIED MATCH / DRIFT DETECTED |
 | Trust boundary | **Written**: "what this pack guarantees / does NOT guarantee" on the panel, the Control Room, the macro and in the memo |
 | Seed data (Northwind Pay) | **Written**; insertion needs a live site |
-| `forge deploy` / install | **Source here is v6.49, which is not deployed yet.** What runs on `one-atlas-xkzp.atlassian.net` today is **development 6.48.0** and **production 2.1.0** (deployed 2026-11-20T09:04:34Z), Jira and Confluence both Up-to-date, Runs on Atlassian eligible on both. The distribution link (Sharing with anyone) installs **2.1.0**, so that is the build a reviewer sees; v6.49 adds two post-submission fixes (the approval wording rule and the universal-claim flag described above) and goes out in the first post-submission release, planned after 2026-12-13 |
+| `forge deploy` / install | **Source here is v6.50, which is not deployed yet.** What runs on `one-atlas-xkzp.atlassian.net` today is **development 6.48.0** and **production 2.1.0** (deployed 2026-11-20T09:04:34Z), Jira and Confluence both Up-to-date, Runs on Atlassian eligible on both. The distribution link (Sharing with anyone) installs **2.1.0**, so that is the build a reviewer sees; v6.49 added two post-submission fixes (the approval wording rule and the universal-claim flag described above); v6.50 adds the permission check on every write, the reporter half of segregation of duties, a validated project key, the six approval shapes of §1 and the custom-control form and import of §3. They go out in the first post-submission release, planned after 2026-12-13 |
 
 ## 3. Structure
 
@@ -144,7 +212,10 @@ assureloop/
 │   ├── index.ts                 # resolvers, 4 Rovo actions, registry scan, scheduled trigger, seed
 │   ├── engine/
 │   │   ├── gate.ts              # E1/E2/E3/E4: judge one work item live, close its gaps
+│   │   ├── input.ts             # project key / control code / label / window validation
 │   │   └── envcheck.ts          # E5: six probes, one budget, GREEN/YELLOW/RED
+│   ├── perm/guard.ts            # mypermissions as the user: the first line of every write
+│   ├── registry/custom.ts       # custom controls: validation, one claim per save, JSON import
 │   ├── trace/graph.ts           # provenance hops -> node/link graph for the SVG
 │   ├── twg/queries.ts           # curated + persisted queries, retry/backoff, scope probes, 5-state judge
 │   ├── jira/rest.ts             # JQL, issue, comments, components, remediation issues
@@ -165,7 +236,7 @@ assureloop/
 ├── scripts/                     # build-ui, build-demo, check-claims, check-demo (browser measurement)
 ├── skills/audit-pack-playbook/SKILL.md
 ├── resource/agent/{prompts,icons}/
-└── test/                        # 12 files, 489 assertions, no site required
+└── test/                        # 13 files, 625 assertions, no site required
 ```
 
 ## 4. Prerequisites
@@ -187,7 +258,7 @@ named *AssureLoop* was created for the account during registration.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit, strict
-npm run smoke       # compiles, then 489 assertions across 12 test files (see TESTING.md §7)
+npm run smoke       # compiles, then 625 assertions across 13 test files (see TESTING.md §7)
 npm run check:claims # docs, code and the measured numbers must agree
 npm run build:demo  # regenerates docs/demo/data.js from the shipped programme
 npm run test:demo   # Playwright: 1440, 1920 and 390x844, no horizontal scroll (needs python playwright)
@@ -421,7 +492,7 @@ lives in SQL (`app_config.scan_principal_account_id`) and is therefore per insta
 | # | Claim | Status |
 |---|---|---|
 | 1 | TypeScript compiles clean (strict) | **Verified**: `npx tsc --noEmit`, 0 errors |
-| 2 | Five states are deterministic; unproven scope ≠ MISSING; throttle ≠ MISSING; an absent page is MISSING; an unread population is never MISSING; a universal claim fails on one unqualified object; a persisted failure never moves a verdict | **Verified**: `npm run smoke`, 489/489 |
+| 2 | Five states are deterministic; unproven scope ≠ MISSING; throttle ≠ MISSING; an absent page is MISSING; an unread population is never MISSING; a universal claim fails on one unqualified object; a persisted failure never moves a verdict | **Verified**: `npm run smoke`, 625/625 |
 | 3 | `manifest.yml` passes Forge validation, including `jira:globalPage` and map-form scopes with `allowImpersonation` | **Verified**: `forge lint` -> *No issues found* |
 | 4 | The app is registered and `app.id` is in the manifest | **Verified**: `ari:cloud:ecosystem::app/f671f494-1c70-40d1-a9e7-624b9d45ada2` |
 | 5 | Custom UI bundles build and every `resource:` path resolves | **Verified**: `npm run build:ui`, `forge lint` |
@@ -453,7 +524,7 @@ external API, no container, no LLM billing.
 
 ## 11. Next
 
-- **Post-submission release, planned after 2026-12-13:** deploy v6.49 to production so the
+- **Post-submission release, planned after 2026-12-13:** deploy v6.50 to production so the
   install link serves the build this repository describes. It carries the approval wording
   rule, the universal-claim flag, and the scope cleanup that has to wait for the judging
   window (the unused impersonation on `write:jira-work` and `read:confluence-content.all`,

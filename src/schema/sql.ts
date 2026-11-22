@@ -190,6 +190,9 @@ export interface ClaimExceptionRow {
   compensating_control: string | null;
   recorded_by: string | null;
   recorded_at: string;
+  /** Who withdrew the exception, and when. A withdrawal is an act with a name on it. */
+  withdrawn_by?: string | null;
+  withdrawn_at?: string | null;
   active: number;
 }
 
@@ -412,6 +415,20 @@ export const MIGRATIONS: readonly Migration[] = [
   {
     name: 'v020_index_claim_exceptions_key',
     statement: 'CREATE INDEX IF NOT EXISTS idx_exceptions_key ON claim_exceptions (claim_key)',
+  },
+  {
+    // Withdrawing an exception used to flip one flag and leave no trace of who did
+    // it. An auditor reading the pack wants the act, its author and its time: an
+    // exception that vanishes without a name is indistinguishable from one that was
+    // never recorded.
+    name: 'v021_claim_exceptions_withdrawn_by',
+    statement: 'ALTER TABLE claim_exceptions ADD COLUMN withdrawn_by VARCHAR(128) NULL',
+    addColumn: { table: 'claim_exceptions', column: 'withdrawn_by' },
+  },
+  {
+    name: 'v022_claim_exceptions_withdrawn_at',
+    statement: 'ALTER TABLE claim_exceptions ADD COLUMN withdrawn_at VARCHAR(32) NULL',
+    addColumn: { table: 'claim_exceptions', column: 'withdrawn_at' },
   },
 ];
 
@@ -704,6 +721,53 @@ export async function insertRequirement(
       JSON.stringify(requirement.rule ?? {}),
     ],
   );
+}
+
+/**
+ * Add one claim to a control, or replace the claim of the same evidence type.
+ *
+ * A custom control added from the Control Room starts with one claim, and a second
+ * save of the same control with the same evidence type must change that claim rather
+ * than add a duplicate row: two rows of the same type would be judged twice and both
+ * would appear on the pack. Only the row of that evidence type is touched; a control
+ * with several claims keeps the others.
+ */
+export async function upsertRequirement(
+  controlId: string,
+  requirement: Omit<RequirementInput, 'controlId'>,
+): Promise<string> {
+  const existing = (await listRequirements(controlId)).find(
+    (row) => row.evidence_type === requirement.evidenceType,
+  );
+  if (existing) {
+    await mutate(
+      `UPDATE evidence_requirements
+          SET max_age_days = ?, min_count = ?, rule_json = ?
+        WHERE id = ?`,
+      [
+        requirement.maxAgeDays,
+        requirement.minCount,
+        JSON.stringify(requirement.rule ?? {}),
+        existing.id,
+      ],
+    );
+    return existing.id;
+  }
+  const id = newId();
+  await mutate(
+    `INSERT INTO evidence_requirements
+       (id, control_id, evidence_type, max_age_days, min_count, rule_json)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      controlId,
+      requirement.evidenceType,
+      requirement.maxAgeDays,
+      requirement.minCount,
+      JSON.stringify(requirement.rule ?? {}),
+    ],
+  );
+  return id;
 }
 
 export async function listRequirements(controlId: string): Promise<RequirementRow[]> {
@@ -1176,11 +1240,20 @@ export async function getClaimException(claimKey: string): Promise<ClaimExceptio
 }
 
 /** Withdraw an exception: the gap becomes unexplained again from now on. */
-export async function withdrawClaimException(claimKey: string): Promise<boolean> {
+export async function withdrawClaimException(
+  claimKey: string,
+  withdrawnBy?: string | null,
+): Promise<boolean> {
   const existing = await getClaimException(claimKey);
   if (!existing) {
     return false;
   }
-  await mutate('UPDATE claim_exceptions SET active = 0 WHERE id = ?', [existing.id]);
+  // The row is kept, with the actor and the time: "this gap was carried until 3
+  // February and Michael withdrew the exception that day" is the sentence an auditor
+  // reads, and it needs the name that a bare `active = 0` threw away.
+  await mutate(
+    'UPDATE claim_exceptions SET active = 0, withdrawn_by = ?, withdrawn_at = ? WHERE id = ?',
+    [withdrawnBy ?? null, nowIso(), existing.id],
+  );
   return true;
 }

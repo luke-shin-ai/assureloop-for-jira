@@ -269,3 +269,19 @@ table.pack .reason { white-space: normal; }
 .exception-form { display: grid; grid-template-columns: 1fr; gap: 4px; margin-top: 6px; }
 .exception-form input { font-size: 12px; padding: 3px 6px; }
 .unexplained { font-weight: 700; }
+
+/* --- Custom controls: one small form and a JSON paste ----------------------- */
+.custom-form {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px; align-items: end;
+}
+.custom-form .field { display: grid; gap: 3px; }
+.custom-form input[type="text"], .custom-form select { font-size: 12px; padding: 4px 6px; width: 100%; }
+.custom-form .field.check { display: flex; gap: 6px; align-items: center; grid-column: 1 / -1; }
+.custom-import { display: grid; gap: 6px; margin-top: 4px; }
+.custom-import .field { display: grid; gap: 3px; }
+.custom-import textarea {
+  width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-alt); color: var(--text); padding: 8px; resize: vertical;
+}

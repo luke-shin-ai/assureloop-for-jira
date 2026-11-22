@@ -25,6 +25,15 @@ export interface JiraIssueSummary {
   assigneeAccountId: string | null;
   assigneeName: string | null;
   assigneeActive: boolean | null;
+  /**
+   * Who raised the work item. Read for one reason: segregation of duties.
+   *
+   * A sign-off from the person who reported the change is the same pair of hands the
+   * independent-approval claim exists to keep apart, so the claim compares the
+   * approver against the reporter as well as against the assignee.
+   */
+  reporterAccountId: string | null;
+  reporterName: string | null;
   updated: string;
   issueType: string;
 }
@@ -90,6 +99,7 @@ interface RawIssueFields {
   created?: string;
   status?: { name?: string; statusCategory?: { key?: string } };
   assignee?: { accountId?: string; displayName?: string; active?: boolean } | null;
+  reporter?: { accountId?: string; displayName?: string; active?: boolean } | null;
   issuetype?: { name?: string };
   labels?: string[];
   project?: { key?: string; id?: string };
@@ -103,6 +113,7 @@ interface RawIssueFields {
 function mapIssue(issue: { id: string; key: string; fields?: RawIssueFields }): JiraIssueDetail {
   const fields = issue.fields ?? {};
   const assignee = fields.assignee;
+  const reporter = fields.reporter;
   return {
     id: issue.id,
     key: issue.key,
@@ -112,6 +123,8 @@ function mapIssue(issue: { id: string; key: string; fields?: RawIssueFields }): 
     assigneeAccountId: assignee?.accountId ?? null,
     assigneeName: assignee?.displayName ?? null,
     assigneeActive: typeof assignee?.active === 'boolean' ? assignee.active : null,
+    reporterAccountId: reporter?.accountId ?? null,
+    reporterName: reporter?.displayName ?? null,
     updated: fields.updated ?? new Date().toISOString(),
     created: fields.created ?? fields.updated ?? new Date().toISOString(),
     issueType: fields.issuetype?.name ?? 'Task',
@@ -136,6 +149,7 @@ const ISSUE_FIELDS = [
   'summary',
   'status',
   'assignee',
+  'reporter',
   'updated',
   'created',
   'issuetype',
@@ -198,6 +212,8 @@ export async function jqlSearchPage(
         assigneeAccountId: detail.assigneeAccountId,
         assigneeName: detail.assigneeName,
         assigneeActive: detail.assigneeActive,
+        reporterAccountId: detail.reporterAccountId,
+        reporterName: detail.reporterName,
         updated: detail.updated,
         issueType: detail.issueType,
       });

@@ -132,6 +132,12 @@ function graphResponse(query) {
 const requester = {
   requestJira: async (route, options = {}) => {
     const path = String(route);
+    // v6.50: the gate and the gap-closing paths ask mypermissions first. This site
+    // grants what they ask, which is the ordinary case; test/v650 exercises the denial.
+    if (/\/mypermissions/.test(path)) {
+      const requested = /permissions=([A-Z_]+)/.exec(path)?.[1] ?? '';
+      return json({ permissions: { [requested]: { havePermission: true } } });
+    }
     if (/\/search\/jql/.test(path)) {
       const jql = JSON.parse(options.body ?? '{}').jql ?? '';
       if (/labels = "assureloop"/.test(jql)) {

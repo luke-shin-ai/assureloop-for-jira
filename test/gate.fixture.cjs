@@ -20,7 +20,18 @@ const daysAgo = (days) => new Date(now - days * 86400000).toISOString();
 // The fake Atlassian
 // ---------------------------------------------------------------------------
 
-const state = { graphMode: 'ok', commentsStatus: 200, persistedMode: 'error', remoteLinks: [], remediationIssue: null };
+const state = {
+  graphMode: 'ok',
+  commentsStatus: 200,
+  persistedMode: 'error',
+  remoteLinks: [],
+  remediationIssue: null,
+  /**
+   * What Jira answers to mypermissions. A permission that is absent is granted; set one
+   * to false to exercise the refusal path a real site produces.
+   */
+  permissions: {},
+};
 
 function json(body, status = 200) {
   return {
@@ -127,6 +138,15 @@ function graphResponse(query) {
 const requester = {
   requestJira: async (route, options = {}) => {
     const path = String(route);
+    // The permission check every write and every gate evaluation asks first. The
+    // fixture answers it the way Jira does, so the pass and the deny branch are both
+    // exercised against the real guard rather than bypassed.
+    if (/\/mypermissions/.test(path)) {
+      const requested = /permissions=([A-Z_]+)/.exec(path)?.[1] ?? '';
+      return json({
+        permissions: { [requested]: { havePermission: state.permissions[requested] !== false } },
+      });
+    }
     if (/\/search\/jql/.test(path)) {
       const jql = JSON.parse(options.body ?? '{}').jql ?? '';
       if (/labels = "assureloop"/.test(jql)) {
@@ -468,6 +488,52 @@ async function run() {
       (report.skipped[0]?.why ?? '').includes('claim the work item'),
       true,
     ]);
+  }
+
+  // --- v6.50: the gate asks Jira whether this person may see the item --------
+  {
+    const seen = await evaluateIssueGate({ issueKey: 'PAY-1183', cloudId: 'cloud-1', accountId: 'acc-see' });
+    cases.push(['the gate records what Jira said about visibility', seen.permission?.permission, 'BROWSE_PROJECTS']);
+    cases.push(['and that it was granted', seen.permission?.cause, 'GRANTED']);
+    cases.push(['a granted check does not stop the verdict', seen.requirements.length >= 3, true]);
+
+    state.permissions.BROWSE_PROJECTS = false;
+    const hidden = await evaluateIssueGate({ issueKey: 'PAY-1183', cloudId: 'cloud-1', accountId: 'acc-see' });
+    cases.push(['a denied visibility check judges nothing', hidden.requirements.length, 0]);
+    cases.push(['and the badge says it is not visible to you', hidden.badge.state, 'NOT_EVALUATED']);
+    cases.push(['the detail names the permission to ask for', /Browse projects/.test(hidden.badge.detail), true]);
+    cases.push(['the denial is on the result for the screen', hidden.permission?.cause, 'DENIED']);
+    delete state.permissions.BROWSE_PROJECTS;
+  }
+
+  // --- v6.50: closing gaps is an edit to the item ----------------------------
+  {
+    const { closeGapsForIssue } = require('../dist/engine/gate.js');
+    const created = [];
+    const createIssue = async (input) => {
+      created.push(input);
+      return { key: `PAY-9${created.length}`, id: `900${created.length}` };
+    };
+    state.permissions.EDIT_ISSUES = false;
+    let refused = null;
+    try {
+      await closeGapsForIssue({ issueKey: 'PAY-1183', cloudId: 'cloud-1', accountId: 'acc-see', createIssue });
+    } catch (cause) {
+      refused = cause;
+    }
+    cases.push(['a denied edit check refuses to close gaps', refused?.name, 'PermissionError']);
+    cases.push(['and nothing was created', created.length, 0]);
+    cases.push(['the refusal names the permission', refused?.result?.permission, 'EDIT_ISSUES']);
+    cases.push(['the sentence tells the person what to ask for', /Edit issues/.test(String(refused?.message)), true]);
+
+    delete state.permissions.EDIT_ISSUES;
+    const allowed = await closeGapsForIssue({
+      issueKey: 'PAY-1183',
+      cloudId: 'cloud-1',
+      accountId: 'acc-see',
+      createIssue,
+    });
+    cases.push(['a granted edit check closes the gap', allowed.created.length, 1]);
   }
 
   let failures = 0;

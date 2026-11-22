@@ -2,7 +2,7 @@
 
 **Codegeist 2026: Apps for Specialized Industries (finance)**
 **Bonus prize claimed: Best apps with Teamwork Graph integration**
-**Source version in this repository: 6.49** (not deployed yet); **deployed: development 6.48.0 and production 2.1.0** (2026-11-20T09:04:34Z), so 2.1.0 is the build an install link delivers. The two fixes that are in 6.49 and not in 2.1.0 are listed in README §2.
+**Source version in this repository: 6.50** (not deployed yet); **deployed: development 6.48.0 and production 2.1.0** (2026-11-20T09:04:34Z), so 2.1.0 is the build an install link delivers. The fixes that are in 6.50 and not in 2.1.0 are listed in README §2.
 **Distribution: Sharing with anyone; installation link issued 2026-11-20** (it opens the Atlassian install page for the app, with the vendor details and the 13 scopes)
 App ID `ari:cloud:ecosystem::app/f671f494-1c70-40d1-a9e7-624b9d45ada2`
 
@@ -377,7 +377,7 @@ short "this chat cannot read Jira, open the item" answer, not a failed read.
 cd assureloop
 npm install
 npx tsc --noEmit          # strict TypeScript: 0 errors
-npm run smoke             # compiles, then 489 assertions across 12 files; no site, no credentials
+npm run smoke             # compiles, then 625 assertions across 13 files; no site, no credentials
 npm run build:ui          # esbuild bundles for the three Custom UI surfaces
 npm run check:claims      # the numbers in README.md, TESTING.md and the Devpost text match the code
 npm run build:demo        # regenerates docs/demo/data.js from the shipped programme
@@ -391,17 +391,18 @@ forge lint                # manifest + code -> "No issues found" (needs `forge l
 |---|---|---|
 | `resolvers.unique.cjs` | 3 | every resolver key is defined once (a duplicate throws on the first call and takes every surface down) |
 | `judge.smoke.cjs` | 72 | fresh -> `VERIFIED`; old -> `STALE`; absent with a proven scope -> `MISSING`; unproven scope -> `NOT_VISIBLE`, never `MISSING`; throttle / unindexed / unread population / `teamsV2` 403 -> `INCOMPLETE`; failure classification |
-| `gate.fixture.cjs` | 53 | a whole work item judged against a fake Atlassian: a 412-day-old policy is `STALE` with a working URL, a denied ownership hop is `NOT_VISIBLE` and names the scope, a throttled comment read is `INCOMPLETE` with `RATE_LIMIT_EXCEEDED` |
+| `gate.fixture.cjs` | 65 | a whole work item judged against a fake Atlassian: a 412-day-old policy is `STALE` with a working URL, a denied ownership hop is `NOT_VISIBLE` and names the scope, a throttled comment read is `INCOMPLETE` with `RATE_LIMIT_EXCEEDED`; the fixture answers `mypermissions` like a site, so the granted and the denied branch of the visibility check and of `EDIT_ISSUES` are both exercised |
 | `scan.honesty.cjs` | 23 | the registry scan reports the same five states with the same rules as the panel |
 | `audit.pack.cjs` | 63 | the fingerprint covers all 18 hashed fields; changing a label, URL, missing scope, exception reason/expiry/compensating control, remediation, window or judged time is **DRIFT**; row order and clock-derived values are not |
 | `trace.render.cjs` | 29 | in jsdom: one box per hop node, one curve per relation, no overlapping boxes, no label under a box or outside the drawing, a backward hop gets its own column, the footer shows `queryKey, rows, ms, retries` |
-| `control-room.render.cjs` | 27 | in jsdom: **Scan the registry** really calls `scanNow` (a regression test for a shadowed handler that once made the button dead) |
+| `control-room.render.cjs` | 40 | in jsdom: **Scan the registry** really calls `scanNow` (a regression test for a shadowed handler that once made the button dead); the custom-control form sends the code, type, window and `everyItem` that were typed, and the JSON import repeats the sentence for the row it refused |
 | `hardening.cjs` | 21 | unreachable site -> `NOT_EVALUATED`, not a throw; registry falls back to the shipped programme |
 | `v627.regressions.cjs` | 55 | the cross-review fixes: scope-probe honesty, no read-failure-as-permission, finding tokens, retry isolation, truncated persisted results |
 | `v630.regressions.cjs` | 37 | the graph budget: a hung hop returns instead of blocking, a capped hop is `TIMEOUT` and not retried, two caps open the breaker, REST owner fallback names the property that answered, migrations run once |
 | `v635.regressions.cjs` | 45 | the v6.35 honesty core: an approval is a statement rather than a request, a revoked ownership hop is `not visible` rather than `nobody accountable`, a denial is not outvoted by a REST candidate, an empty project is `not checked`, a link title is not a pull request, `regulationRef` is hashed, and the cross-product claim's three answers |
 | **v640.regressions.cjs** | 61 | the v6.49 red-team round: seventeen phrasings that read as approvals are not, a population claim prints how much it read and how much qualified (`everyItem` needs all of it), change 51 and comment 101 are read through the API's pages, migrations survive a concurrent first request, the trace footer reports one read per number, and the displayed fingerprint is 128 bits |
-| **total** | **489** | 12 files, no site, no credentials |
+| **v650.regressions.cjs** | 111 | the v6.50 red-team round: six approval shapes in both directions (a mention of the process, a checklist review that found gaps, `un-approved`, a partial `LGTM`, and the verb form `I approve`), the 17 earlier rejections re-run against the widened pattern, the reporter half of segregation of duties on the panel and in the scan, every write asking Jira first (granted, denied and unanswered, with nothing written on a refusal), a project key as a whitelist that never reaches a JQL query, a custom control written with its rule and updated rather than duplicated, the JSON import's per-row report, and the actor kept on a withdrawn exception |
+| **total** | **625** | 13 files, no site, no credentials |
 
 ---
 
@@ -452,7 +453,7 @@ Stated here rather than found by you:
 - [ ] Confluence macro renders a claim table with an as-of time, a SHA-256 fingerprint, and
       **Verify fingerprint** -> `VERIFIED MATCH`
 - [ ] An exception turns an unexplained gap into an explained one **without** changing the state
-- [ ] `npm run smoke` -> 489/489
+- [ ] `npm run smoke` -> 625/625
 
 ---
 

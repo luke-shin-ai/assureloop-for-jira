@@ -13,6 +13,7 @@ Needs Playwright (python) with its bundled Chromium. No server: the page is open
 from disk, which is the claim being tested.
 """
 import argparse
+import json
 import pathlib
 import sys
 
@@ -66,6 +67,49 @@ def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(target)
             page.wait_for_selector('[data-claim="AC-01/jira_work_item"]')
+
+            # v6.50: the custom control form and its JSON import work in this tab, and
+            # the rows they add do not push the page sideways at any viewport. The steps
+            # run before the measurement so the widest state of the page is what is
+            # measured. The served copy is only measured against the previous build's
+            # page until it is redeployed, so the form is exercised when it is on the
+            # page and skipped (with a note) when it is not there yet.
+            has_custom = page.locator("[data-custom-code]").count() > 0
+            if not has_custom:
+                print(f"  {name}: the served page has no custom-control form yet (the deploy is pending)")
+            if has_custom:
+                page.fill("[data-custom-code]", "AC-13")
+                page.fill("[data-custom-name]", "Every release has a retention decision")
+                page.select_option("[data-custom-type]", "approval_comment")
+                page.fill("[data-custom-days]", "45")
+                page.check("[data-custom-every]")
+                page.click("[data-custom-add]")
+                added = page.evaluate("() => document.querySelectorAll('[data-custom-row]').length")
+                if added != 1:
+                    failures.append(f"{name}: Add the control rendered {added} row(s), expected 1")
+                add_status = page.inner_text("[data-custom-status]")
+                if "AC-13 added" not in add_status:
+                    failures.append(f"{name}: Add the control said {add_status[:90]!r}")
+
+                page.fill(
+                    "[data-custom-json]",
+                    json.dumps(
+                        [
+                            {"code": "AC-14", "name": "Vendor onboarding approval", "evidenceType": "approval_comment", "maxAgeDays": 30},
+                            {"code": "AC-15", "name": "Key rotation attestation", "evidenceType": "test_record", "maxAgeDays": 400, "everyItem": True},
+                            {"code": "bad code", "name": "nope", "evidenceType": "jira_work_item"},
+                        ]
+                    ),
+                )
+                page.click("[data-custom-import]")
+                imported_rows = page.evaluate("() => document.querySelectorAll('[data-custom-row]').length")
+                if imported_rows != 3:
+                    failures.append(f"{name}: the JSON import rendered {imported_rows} row(s), expected 3")
+                import_status = page.inner_text("[data-custom-status]")
+                if "Imported 2 control(s)" not in import_status or "refused 1" not in import_status:
+                    failures.append(f"{name}: the import report was {import_status[:120]!r}")
+                if "control code" not in import_status:
+                    failures.append(f"{name}: the refused row carries no reason: {import_status[:120]!r}")
 
             scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
             inner_width = page.evaluate("() => window.innerWidth")

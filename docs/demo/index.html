@@ -80,6 +80,43 @@
       </div>
       <div class="table" data-claims-table aria-live="polite"></div>
     </div>
+
+    <div class="card" data-custom-controls>
+      <div class="card-head">
+        <h2>Custom controls</h2>
+        <p class="muted small">A control of your own, added in this tab. Validated the way the app validates it.</p>
+      </div>
+      <p class="muted small">The twelve claims above are the programme the app ships. A team with a control of its own adds it here: the same validation as the Control Room's form, the same rule it would be judged by. This page has no Jira site behind it, so it keeps what you add in this tab and claims no verdict for it; the app writes it to the registry and the next scan judges it.</p>
+      <div class="custom-form">
+        <label class="field"><span>Control code</span><input data-custom-code type="text" placeholder="AC-13" autocomplete="off"></label>
+        <label class="field"><span>Name</span><input data-custom-name type="text" placeholder="Every release has a retention decision" autocomplete="off"></label>
+        <label class="field"><span>Evidence type</span>
+          <select data-custom-type>
+            <option value="jira_work_item" selected>Completed change record</option>
+            <option value="approval_comment">Independent approval</option>
+            <option value="policy_page">Governing policy</option>
+            <option value="test_record">Test or attestation record</option>
+            <option value="pull_request">Linked pull request</option>
+            <option value="deployment">Deployment record</option>
+            <option value="approval_independence">Approval accountability</option>
+          </select>
+        </label>
+        <label class="field"><span>Window (days)</span><input data-custom-days type="text" inputmode="numeric" value="90" autocomplete="off"></label>
+        <label class="field check"><input data-custom-every type="checkbox"><span>Every item must qualify</span></label>
+        <div class="custom-actions"><button class="button" type="button" data-custom-add>Add the control</button></div>
+      </div>
+      <div class="custom-import">
+        <label class="field"><span>JSON import</span>
+          <textarea data-custom-json rows="3" spellcheck="false" placeholder='[{"code":"AC-14","name":"Quarterly retention decision","evidenceType":"jira_work_item","maxAgeDays":90,"everyItem":true}]'></textarea>
+        </label>
+        <div class="custom-actions">
+          <button class="button ghost" type="button" data-custom-import>Import JSON</button>
+          <span class="muted small">An array of controls, or an object with a "controls" array.</span>
+        </div>
+      </div>
+      <p class="custom-status" data-custom-status role="status" aria-live="polite"></p>
+      <div class="custom-list" data-custom-table aria-live="polite"></div>
+    </div>
   </section>
 
   <section class="panel" id="panel-evidence" role="tabpanel" aria-labelledby="tab-evidence" hidden>

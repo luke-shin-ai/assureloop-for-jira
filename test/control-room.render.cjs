@@ -105,6 +105,7 @@ export const invoke = async (name, payload) => {
       controls: [
         { code: 'AC-06', name: 'Incident postmortem completed within five business days', regulationRef: 'DORA Art.17', cadence: 'CONTINUOUS', state: 'STALE', openGaps: 1, incomplete: 0 },
       ],
+      customControls: [],
       environment: null,
     };
   }
@@ -138,6 +139,30 @@ export const invoke = async (name, payload) => {
       created: [{ key: 'PAY-201', done: true, status: 'Done', note: 'completed' }],
       skipped: [],
       scan: { counts: { VERIFIED: 1, STALE: 0, MISSING: 0, NOT_VISIBLE: 0, INCOMPLETE: 18 }, durationMs: 4200, scanId: 'scan-2' },
+    };
+  }
+  if (name === 'upsertControl') {
+    return {
+      saved: true,
+      code: payload?.code ?? '',
+      created: true,
+      evidenceType: payload?.evidenceType ?? 'jira_work_item',
+      jiraLabel: String(payload?.code ?? '').toLowerCase(),
+      jiraProjectKey: 'PAY',
+      maxAgeDays: Number(payload?.maxAgeDays ?? 90),
+      everyItem: Boolean(payload?.everyItem),
+      why: null,
+    };
+  }
+  if (name === 'importControls') {
+    return {
+      imported: 1,
+      failed: 1,
+      why: null,
+      results: [
+        { code: 'AC-95', saved: true, created: true, evidenceType: 'jira_work_item', why: null },
+        { code: null, saved: false, created: false, evidenceType: null, why: 'A control code is required (for example AC-13).' },
+      ],
     };
   }
   if (name === 'environmentCheck') {
@@ -316,6 +341,69 @@ async function main() {
     (document.querySelector('#app')?.textContent ?? '').includes('PAY-201'),
     true,
   ]);
+
+  // --- v6.50: a custom control, from the form and from a JSON paste ---------
+  {
+    const field = (id) => document.querySelector(`[data-testid="${id}"]`);
+    cases.push([
+      'the custom control form asks for a code, a name, a type and a window',
+      Boolean(field('custom-code') && field('custom-name') && field('custom-type') && field('custom-days')),
+      true,
+    ]);
+    cases.push(['and for the everyItem choice', Boolean(field('custom-every')), true]);
+    cases.push(['and a JSON import beside it', Boolean(field('custom-json')), true]);
+
+    const typeAnd = (node) => node.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    if (field('custom-code')) {
+      field('custom-code').value = 'AC-95';
+      typeAnd(field('custom-code'));
+      field('custom-name').value = 'Retention decision on every release';
+      typeAnd(field('custom-name'));
+      field('custom-days').value = '45';
+      typeAnd(field('custom-days'));
+      field('custom-every').checked = true;
+      field('custom-every').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      const addButton = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Add the control');
+      cases.push(['the form has its own add button', Boolean(addButton), true]);
+      if (addButton) {
+        addButton.click();
+        await wait(120);
+      }
+    }
+    const saved = [...(dom.window.__invoked ?? [])].reverse().find((entry) => entry.name === 'upsertControl');
+    cases.push(['pressing Add the control calls the upsertControl resolver', Boolean(saved), true]);
+    cases.push(['and sends the code that was typed', saved?.payload?.code, 'AC-95']);
+    cases.push(['and the evidence type chosen', saved?.payload?.evidenceType, 'jira_work_item']);
+    cases.push(['and the window that was typed', String(saved?.payload?.maxAgeDays), '45']);
+    cases.push(['and the universal choice', saved?.payload?.everyItem, true]);
+    cases.push([
+      'the saved control is announced on the card',
+      /AC-95 added/.test(field('custom-notice')?.textContent ?? ''),
+      true,
+    ]);
+
+    if (field('custom-json')) {
+      field('custom-json').value = '[{"code":"AC-95","name":"x","evidenceType":"jira_work_item"}]';
+      typeAnd(field('custom-json'));
+      const importButton = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Import JSON');
+      if (importButton) {
+        importButton.click();
+        await wait(120);
+      }
+    }
+    const imported = [...(dom.window.__invoked ?? [])].reverse().find((entry) => entry.name === 'importControls');
+    cases.push(['pressing Import JSON calls the importControls resolver', Boolean(imported), true]);
+    cases.push([
+      'the report says how many were imported and refused',
+      /Imported 1 control\(s\); refused 1/.test(field('custom-notice')?.textContent ?? ''),
+      true,
+    ]);
+    cases.push([
+      'and repeats the sentence for the refused row',
+      /A control code is required/.test(field('custom-notice')?.textContent ?? ''),
+      true,
+    ]);
+  }
 
   let failures = 0;
   for (const [name, actual, expected] of cases) {

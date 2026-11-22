@@ -12,15 +12,11 @@ dist/
 # Test scaffolding written at test time
 test/bridge.stub.js
 
-# Internal working files: they are not part of the app, and none of them is evidence
+# Local working files
+# A run leaves these beside the tree: verification output, a recording, a note kept
+# next to the file it is about. They are the run's own, not the app's, and nothing in
+# this repository describes what a given session was working on.
 verify-output.txt
 *.mp4
-gcp-hermes-*
-reviews-*/
-external-llm-cross-review.md
-v6.*-verification.md
-roi*-verification.md
-judge-validation.md
-g0-benchmark.md
-scoring-opportunities.md
-preparation-checklist.md
+*.webm
+*.local.md

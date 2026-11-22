@@ -244,3 +244,37 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   .claim-card header { flex-direction: column; }
   .boundary { padding: 12px 14px; }
 }
+
+/* --- Custom controls: a small form and a JSON paste ------------------------- */
+.custom-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 14px;
+  align-items: end;
+  margin: 12px 0 6px;
+}
+.custom-form .field { display: grid; gap: 4px; min-width: 0; }
+.custom-form .field > span { font-size: 0.78rem; color: var(--ink-faint); }
+.custom-form .field.check { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
+.custom-form input[type="text"], .custom-form select {
+  font: inherit; font-size: 0.9rem; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); color: var(--ink); width: 100%; min-width: 0;
+}
+.custom-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.custom-import { display: grid; gap: 6px; margin: 8px 0; }
+.custom-import .field { display: grid; gap: 4px; }
+.custom-import .field > span { font-size: 0.78rem; color: var(--ink-faint); }
+.custom-import textarea {
+  width: 100%; font-family: var(--mono); font-size: 0.78rem; padding: 8px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink);
+  resize: vertical; min-width: 0;
+}
+.custom-status { margin: 6px 0; font-size: 0.85rem; color: var(--ink-soft); min-height: 1.2em; }
+.custom-list { display: grid; gap: 6px; }
+.custom-row {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline;
+  border-top: 1px solid var(--line); padding: 8px 0;
+}
+.custom-row .custom-code { font-family: var(--mono); font-weight: 600; font-size: 0.82rem; }
+.custom-row .custom-name { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.custom-row .custom-meta { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-soft); }

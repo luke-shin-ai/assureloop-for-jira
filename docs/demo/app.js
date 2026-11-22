@@ -211,6 +211,169 @@
     list.innerHTML = DATA.notGuaranteed.map(function (line) { return '<li>' + esc(line) + '</li>'; }).join('');
   });
 
+  // ------------------------------------------------------------------ custom controls
+  // The same validation the app's registry applies, in the browser: a code, a label and
+  // a window that would change a query are refused with the reason, and nothing is
+  // silently corrected. What is added here lives in this tab; the page claims no verdict
+  // for a control it has no Jira site to judge.
+  var EVIDENCE_LABEL = {
+    jira_work_item: 'Completed change record',
+    approval_comment: 'Independent approval',
+    policy_page: 'Governing policy',
+    test_record: 'Test or attestation record',
+    pull_request: 'Linked pull request',
+    deployment: 'Deployment record',
+    approval_independence: 'Approval accountability'
+  };
+  var customControls = [];
+
+  function validateControl(row) {
+    var code = String(row.code == null ? '' : row.code).trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9_-]{1,23}$/.test(code)) {
+      return { ok: false, why: 'A control code starts with a letter and holds 2 to 24 characters: capital letters, digits, hyphens and underscores.' };
+    }
+    var name = String(row.name == null ? '' : row.name).replace(/\s+/g, ' ').trim();
+    if (!name) {
+      return { ok: false, why: 'A control needs a name: it is the sentence the claim reads on every row.' };
+    }
+    if (name.length > 200) {
+      return { ok: false, why: 'A control name is at most 200 characters.' };
+    }
+    var evidenceType = String(row.evidenceType == null ? '' : row.evidenceType).trim().toLowerCase();
+    if (!EVIDENCE_LABEL[evidenceType]) {
+      return { ok: false, why: 'Choose one evidence type: ' + Object.keys(EVIDENCE_LABEL).join(', ') + '.' };
+    }
+    var daysRaw = row.maxAgeDays == null || row.maxAgeDays === '' ? 90 : Number.parseInt(String(row.maxAgeDays), 10);
+    if (!Number.isFinite(daysRaw) || daysRaw < 1 || daysRaw > 3650) {
+      return { ok: false, why: 'A freshness window is a whole number of days between 1 and 3650.' };
+    }
+    return {
+      ok: true,
+      control: {
+        code: code,
+        name: name,
+        evidenceType: evidenceType,
+        maxAgeDays: daysRaw,
+        everyItem: row.everyItem === true || row.everyItem === 'true'
+      }
+    };
+  }
+
+  function renderCustom() {
+    var holder = document.querySelector('[data-custom-table]');
+    if (!holder) return;
+    if (customControls.length === 0) {
+      holder.innerHTML = '<p class="muted small">No custom control added in this tab yet.</p>';
+      return;
+    }
+    holder.innerHTML = customControls.map(function (control, index) {
+      return '' +
+        '<div class="custom-row" data-custom-row="' + esc(control.code) + '">' +
+          '<div class="custom-code">' + esc(control.code) + '</div>' +
+          '<div class="custom-name">' + esc(control.name) + '</div>' +
+          '<div class="custom-meta">' + esc(EVIDENCE_LABEL[control.evidenceType]) +
+            ' within ' + esc(control.maxAgeDays) + ' d' +
+            (control.everyItem ? ', every item' : '') + '</div>' +
+          '<button class="link-button" type="button" data-custom-remove="' + index + '">Remove</button>' +
+        '</div>';
+    }).join('') +
+      '<p class="muted small">Held in this tab. The app writes these to the registry on your site, where the next scan judges each one.</p>';
+  }
+
+  function customStatus(message) {
+    var node = document.querySelector('[data-custom-status]');
+    if (node) node.textContent = message;
+  }
+
+  function addCustom(row) {
+    var result = validateControl(row);
+    if (!result.ok) {
+      customStatus('Refused: ' + result.why);
+      return false;
+    }
+    // A second save of the same code replaces that control, as the registry's upsert
+    // does: two rows of one code would be two rows of one control.
+    var existing = -1;
+    customControls.forEach(function (control, index) {
+      if (control.code === result.control.code) existing = index;
+    });
+    if (existing >= 0) {
+      customControls[existing] = result.control;
+      customStatus(result.control.code + ' updated: ' + EVIDENCE_LABEL[result.control.evidenceType] + ', within ' + result.control.maxAgeDays + ' day(s).');
+    } else {
+      customControls.push(result.control);
+      customStatus(result.control.code + ' added: ' + EVIDENCE_LABEL[result.control.evidenceType] + ', within ' + result.control.maxAgeDays + ' day(s). The app writes it to the registry; this page has no site to scan.');
+    }
+    renderCustom();
+    return true;
+  }
+
+  var addButton = document.querySelector('[data-custom-add]');
+  if (addButton) {
+    addButton.addEventListener('click', function () {
+      addCustom({
+        code: document.querySelector('[data-custom-code]').value,
+        name: document.querySelector('[data-custom-name]').value,
+        evidenceType: document.querySelector('[data-custom-type]').value,
+        maxAgeDays: document.querySelector('[data-custom-days]').value,
+        everyItem: document.querySelector('[data-custom-every]').checked
+      });
+    });
+  }
+
+  var importButton = document.querySelector('[data-custom-import]');
+  if (importButton) {
+    importButton.addEventListener('click', function () {
+      var raw = document.querySelector('[data-custom-json]').value;
+      var parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        customStatus('Refused: that is not JSON (' + error.message + '). Paste an array of controls.');
+        return;
+      }
+      var list = Array.isArray(parsed) ? parsed : Array.isArray(parsed && parsed.controls) ? parsed.controls : null;
+      if (!list) {
+        customStatus('Refused: paste a JSON array of controls, or an object with a "controls" array.');
+        return;
+      }
+      if (list.length === 0) {
+        customStatus('The list is empty: there is nothing to import.');
+        return;
+      }
+      if (list.length > 50) {
+        customStatus('Refused: that list holds ' + list.length + ' controls; an import is limited to 50 at a time.');
+        return;
+      }
+      var imported = 0;
+      var refused = [];
+      list.forEach(function (entry, index) {
+        var result = validateControl(entry || {});
+        if (!result.ok) {
+          refused.push('row ' + (index + 1) + ': ' + result.why);
+          return;
+        }
+        imported += 1;
+        addCustom(result.control);
+      });
+      customStatus(
+        'Imported ' + imported + ' control(s)' +
+        (refused.length ? '; refused ' + refused.length + ': ' + refused.join(' | ') : '.')
+      );
+    });
+  }
+
+  document.addEventListener('click', function (event) {
+    var remove = event.target.closest('[data-custom-remove]');
+    if (!remove) return;
+    var index = Number(remove.getAttribute('data-custom-remove'));
+    var removed = customControls.splice(index, 1)[0];
+    if (removed) customStatus(removed.code + ' removed from this tab.');
+    renderCustom();
+  });
+
+  renderCustom();
+
   // ------------------------------------------------------------------ actions
   document.querySelectorAll('[data-expand]').forEach(function (button) {
     button.addEventListener('click', function () {

@@ -344,9 +344,12 @@ async function main() {
   check('concurrent callers run migrations once', state.migrations.runs, 1);
   check('the migration list is enqueued once', state.migrations.enqueued > 10, true);
   const enqueuedAfterFirst = state.migrations.enqueued;
+  // The reads below are counted, and the assertion is the delta: the point is that a
+  // warm call reads nothing, not how many columns the schema happens to have.
+  const selectsAfterFirst = state.migrations.selects;
   await ensureSchema();
   check('a warm call re-runs nothing', state.migrations.enqueued, enqueuedAfterFirst);
-  check('a warm call does not even read', state.migrations.selects <= 3, true);
+  check('a warm call does not even read', state.migrations.selects, selectsAfterFirst);
 
   let failed = 0;
   for (const [name, actual, expected] of cases) {

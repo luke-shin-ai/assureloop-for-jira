@@ -50,7 +50,28 @@ const state = {
   exceptionNotice: null,
   onboarding: false,
   onboardResult: null,
+  /** The custom-control form. Kept here so a re-render does not empty the fields. */
+  customCode: '',
+  customName: '',
+  customLabel: '',
+  customType: 'jira_work_item',
+  customDays: '90',
+  customEvery: false,
+  customJson: '',
+  customNotice: null,
+  customBusy: false,
 };
+
+/** The evidence types a custom control may claim, in the words the rows use. */
+const CUSTOM_EVIDENCE = [
+  ['jira_work_item', 'Completed change record'],
+  ['approval_comment', 'Independent approval'],
+  ['policy_page', 'Governing policy'],
+  ['test_record', 'Test or attestation record'],
+  ['pull_request', 'Linked pull request'],
+  ['deployment', 'Deployment record'],
+  ['approval_independence', 'Approval accountability'],
+];
 
 function countBoxes(counts) {
   const order = ['VERIFIED', 'STALE', 'MISSING', 'NOT_VISIBLE', 'INCOMPLETE'];
@@ -691,6 +712,235 @@ function controlsCard(rollup) {
   ]);
 }
 
+/**
+ * Custom controls: a programme that is not only the twelve shipped with the app.
+ *
+ * Two ways in, both of them small: a form for one control (code, name, evidence type,
+ * freshness window, everyItem) and a JSON paste for a list of them. Both go through the
+ * same resolver, so both are validated the same way and both say exactly which row was
+ * refused and why. The site administrator check happens on the server: this card never
+ * pretends to know who may write.
+ */
+function customControlsCard(rollup) {
+  const existing = rollup.customControls ?? [];
+  const text = (label, attrs) =>
+    el('label', { class: 'field' }, [el('span', { class: 'tiny muted', text: label }), el('input', attrs)]);
+
+  const form = el('div', { class: 'custom-form' }, [
+    text('Control code', {
+      type: 'text',
+      placeholder: 'AC-13',
+      value: state.customCode,
+      oninput: (event) => {
+        state.customCode = event.target.value;
+      },
+      dataset: { testid: 'custom-code' },
+    }),
+    text('Name (the sentence the claim reads)', {
+      type: 'text',
+      placeholder: 'Every release has a retention decision on record',
+      value: state.customName,
+      oninput: (event) => {
+        state.customName = event.target.value;
+      },
+      dataset: { testid: 'custom-name' },
+    }),
+    el('label', { class: 'field' }, [
+      el('span', { class: 'tiny muted', text: 'Evidence type' }),
+      el(
+        'select',
+        {
+          onchange: (event) => {
+            state.customType = event.target.value;
+          },
+          dataset: { testid: 'custom-type' },
+        },
+        CUSTOM_EVIDENCE.map(([value, label]) =>
+          el('option', { value, text: label, selected: value === state.customType }),
+        ),
+      ),
+    ]),
+    text('Freshness window (days)', {
+      type: 'text',
+      inputmode: 'numeric',
+      placeholder: '90',
+      value: state.customDays,
+      oninput: (event) => {
+        state.customDays = event.target.value;
+      },
+      dataset: { testid: 'custom-days' },
+    }),
+    text('Jira label (optional)', {
+      type: 'text',
+      placeholder: 'ctrl-ac-13',
+      value: state.customLabel,
+      oninput: (event) => {
+        state.customLabel = event.target.value;
+      },
+      dataset: { testid: 'custom-label' },
+    }),
+    el('label', { class: 'field check' }, [
+      el('input', {
+        type: 'checkbox',
+        checked: state.customEvery,
+        onchange: (event) => {
+          state.customEvery = event.target.checked;
+        },
+        dataset: { testid: 'custom-every' },
+      }),
+      el('span', {
+        class: 'tiny',
+        text: 'Every item must qualify (a universal claim), not just one',
+      }),
+    ]),
+    el('div', { class: 'row' }, [
+      el('button', {
+        class: 'primary tiny',
+        text: state.customBusy ? 'Saving…' : 'Add the control',
+        disabled: state.customBusy,
+        onclick: addCustomControl,
+      }),
+      el('span', {
+        class: 'tiny muted',
+        text: `Saved to ${state.projectKey ?? rollup.binding?.projectKey ?? 'the bound project'}. Adding a control needs ADMINISTER on this site.`,
+      }),
+    ]),
+  ]);
+
+  const importer = el('div', { class: 'custom-import' }, [
+    el('label', { class: 'field' }, [
+      el('span', {
+        class: 'tiny muted',
+        text: 'JSON import: an array of controls, or an object with a "controls" array',
+      }),
+      el('textarea', {
+        rows: '4',
+        placeholder:
+          '[{"code":"AC-14","name":"Quarterly retention decision","evidenceType":"jira_work_item","maxAgeDays":90,"everyItem":true}]',
+        value: state.customJson,
+        oninput: (event) => {
+          state.customJson = event.target.value;
+        },
+        dataset: { testid: 'custom-json' },
+      }),
+    ]),
+    el('div', { class: 'row' }, [
+      el('button', {
+        class: 'secondary tiny',
+        text: 'Import JSON',
+        disabled: state.customBusy,
+        onclick: importControls,
+      }),
+      el('span', { class: 'tiny muted', text: 'Each row is validated on its own; a refused row says why.' }),
+    ]),
+  ]);
+
+  return el('div', { class: 'card stack' }, [
+    el('div', { class: 'spread' }, [
+      el('h2', { text: 'Custom controls' }),
+      badge(existing.length > 0 ? 'PASS' : 'NOT_EVALUATED', `${existing.length} added to the programme`),
+    ]),
+    el('p', {
+      class: 'tiny muted',
+      text:
+        'The twelve shipped controls answer DORA and SOX change management. A control of your own is added here and judged by the same engine, with the same five states and the same row on the pack. Nothing is added silently: the code, the label and the window are validated, and a value that would change a query is refused.',
+    }),
+    form,
+    importer,
+    state.customNotice ? el('div', { class: 'banner info', dataset: { testid: 'custom-notice' }, text: state.customNotice }) : null,
+    existing.length === 0
+      ? el('p', { class: 'muted tiny', text: 'No custom control on this site yet. The programme is the twelve shipped controls.' })
+      : el('table', { class: 'grid' }, [
+          el('thead', {}, [
+            el('tr', {}, [
+              el('th', { text: 'Code' }),
+              el('th', { text: 'Control' }),
+              el('th', { text: 'Claims' }),
+              el('th', { text: 'Project' }),
+            ]),
+          ]),
+          el('tbody', {}, existing.map((control) =>
+            el('tr', { dataset: { customControl: control.code } }, [
+              el('td', { class: 'mono', text: control.code }),
+              el('td', {}, [
+                el('div', { text: control.name }),
+                el('div', { class: 'tiny muted', text: `${control.jiraLabel}${control.regulationRef ? ` · ${control.regulationRef}` : ''}` }),
+              ]),
+              el('td', { class: 'tiny' }, (control.claims ?? []).map((claim) =>
+                el('div', {
+                  text: `${CLAIM_LABEL[claim.evidenceType] ?? claim.evidenceType}: within ${claim.maxAgeDays} d${claim.everyItem ? ' · every item' : ''}`,
+                }),
+              )),
+              el('td', { class: 'mono', text: control.jiraProjectKey }),
+            ]),
+          )),
+        ]),
+  ]);
+}
+
+async function addCustomControl() {
+  state.customBusy = true;
+  state.customNotice = null;
+  render();
+  try {
+    const result = await invokeWarm('upsertControl', {
+      code: state.customCode,
+      name: state.customName,
+      jiraLabel: state.customLabel || undefined,
+      evidenceType: state.customType,
+      maxAgeDays: state.customDays,
+      everyItem: state.customEvery,
+      projectKey: state.projectKey || undefined,
+    });
+    if (result?.saved) {
+      state.customNotice =
+        `${result.code} ${result.created ? 'added' : 'updated'}: ${CLAIM_LABEL[result.evidenceType] ?? result.evidenceType}, ` +
+        `within ${result.maxAgeDays} day(s)${result.everyItem ? ', every item' : ''}. Run a scan to judge it.`;
+      state.customCode = '';
+      state.customName = '';
+      state.customLabel = '';
+    } else {
+      // The refusal is the server's sentence, which names what to fix. It is shown as
+      // written rather than re-worded here.
+      state.customNotice = result?.why ?? 'The control was not saved.';
+    }
+    await load();
+  } catch (cause) {
+    state.customNotice = cause instanceof Error ? cause.message : String(cause);
+  } finally {
+    state.customBusy = false;
+    render();
+  }
+}
+
+async function importControls() {
+  state.customBusy = true;
+  state.customNotice = null;
+  render();
+  try {
+    const result = await invokeWarm('importControls', { json: state.customJson });
+    if (result?.why) {
+      state.customNotice = result.why;
+    } else {
+      const refused = (result?.results ?? []).filter((row) => !row.saved);
+      state.customNotice =
+        `Imported ${result?.imported ?? 0} control(s)` +
+        (refused.length > 0
+          ? `; refused ${refused.length}: ${refused.map((row) => `${row.code ?? '(no code)'} — ${row.why}`).join(' | ')}`
+          : '.');
+      if ((result?.imported ?? 0) > 0) {
+        state.customJson = '';
+      }
+    }
+    await load();
+  } catch (cause) {
+    state.customNotice = cause instanceof Error ? cause.message : String(cause);
+  } finally {
+    state.customBusy = false;
+    render();
+  }
+}
+
 function render() {
   clear(root);
   if (state.loading) {
@@ -725,6 +975,7 @@ function render() {
       orphanCard(rollup),
       gapsCard(rollup),
       controlsCard(rollup),
+      customControlsCard(rollup),
     ]),
   );
 }

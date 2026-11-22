@@ -6533,12 +6533,19 @@ ${node.id}`;
     if (legend) {
       container.append(legend);
     }
+    const persistedUsed = trace.persisted && trace.persisted.used === true;
     const foot = el("div", { class: "trace-foot" }, [
       el("span", { text: `queryKey ${trace.queryKey ?? "curated (no key)"}` }),
       el("span", { text: `rows ${trace.rows ?? 0}` }),
       el("span", { text: `${trace.latencyMs ?? 0} ms` }),
       trace.retries ? el("span", { text: `retries ${trace.retries}` }) : null,
-      el("span", { text: `via ${trace.mode ?? "\u2014"}` }),
+      el("span", { text: `via ${trace.mode ?? "unknown"}` }),
+      // A second read is a second number. The footer used to print the larger row count
+      // and the sum of both latencies under one label; when the persisted traversal ran,
+      // it now says so on its own.
+      persistedUsed ? el("span", {
+        text: `+ persisted ${trace.persisted.rows} row(s) / ${trace.persisted.latencyMs} ms`
+      }) : null,
       el("span", { text: trace.label ?? "" })
     ]);
     container.append(foot);

@@ -105,6 +105,12 @@ function commentsFor(index) {
 const requester = {
   requestJira: async (route, options = {}) => {
     const path = String(route);
+    // v6.50: the gate and the gap-closing paths ask mypermissions first; this site
+    // grants what they ask.
+    if (/\/mypermissions/.test(path)) {
+      const requested = /permissions=([A-Z_]+)/.exec(path)?.[1] ?? '';
+      return json({ permissions: { [requested]: { havePermission: true } } });
+    }
     if (/\/search\/jql/.test(path)) {
       const body = JSON.parse(options.body ?? '{}');
       const jql = body.jql ?? '';
@@ -251,7 +257,7 @@ const { judgeRequirement } = require('../dist/twg/queries.js');
 const { statesApproval } = require('../dist/engine/gate.js');
 const { observeComments, observeWorkItems, populationFor, actionGetEvidence } = require('../dist/index.js');
 const { closeGapsForIssue } = require('../dist/engine/gate.js');
-const { ensureSchema, resetSchemaCacheForTests } = require('../dist/schema/sql.js');
+const { ensureSchema, resetSchemaCacheForTests, MIGRATIONS } = require('../dist/schema/sql.js');
 const { fingerprintOf, memoForClaims } = require('../dist/audit/pack.js');
 
 const control = {
@@ -510,7 +516,17 @@ async function main() {
     state.migrations = { enqueued: 0, runs: 0 };
     resetSchemaCacheForTests();
     await ensureSchema();
-    check('a column that already exists is not altered again', state.migrations.enqueued < 20, true);
+    // Counted against the migration list rather than a number typed here: a new
+    // column migration must not fail this assertion, and a migration that is enqueued
+    // for a column that already exists must.
+    const alreadyThere = MIGRATIONS.filter(
+      (migration) => migration.addColumn && state.columns.has(migration.addColumn.column),
+    ).length;
+    check(
+      'a column that already exists is not altered again',
+      state.migrations.enqueued,
+      MIGRATIONS.length - alreadyThere,
+    );
     const afterFirst = state.migrations.enqueued;
     await ensureSchema();
     check('a warm call enqueues nothing', state.migrations.enqueued, afterFirst);

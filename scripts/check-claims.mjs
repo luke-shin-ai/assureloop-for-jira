@@ -82,7 +82,7 @@ const suite = JSON.parse(read('package.json')).scripts.smoke;
 const smokeFiles = [...suite.matchAll(/node (test\/[\w.-]+\.cjs)/g)].map((m) => m[1]);
 const allTests = ['resolvers.unique', 'judge.smoke', 'gate.fixture', 'scan.honesty', 'audit.pack', 'trace.render',
   'control-room.render', 'hardening', 'v627.regressions', 'v630.regressions', 'v635.regressions',
-  'v640.regressions'].map((name) => `test/${name}.cjs`);
+  'v640.regressions', 'v650.regressions'].map((name) => `test/${name}.cjs`);
 const missingFromSmoke = allTests.filter((file) => !smokeFiles.includes(file) && existsSync(rel(file)));
 if (missingFromSmoke.length) fail(`npm run smoke does not run ${missingFromSmoke.join(', ')}: a test outside the suite is a test nobody runs`);
 
