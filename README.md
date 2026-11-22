@@ -34,7 +34,7 @@ Everything below runs in a browser tab or a terminal, with no Atlassian site, no
 | The product itself: the Control Room's 20 claims, an Evidence panel with **Why?**, the audit pack, the trust boundary | `docs/demo/index.html` (open the file) or <https://luke-shin-ai.github.io/assureloop-for-jira/demo/>. Static HTML, no server, no build | 2 min |
 | The numbers in this README against the code that produces them | `npm run check:claims` | 30 s |
 | Every claim the engine rests on | `npm run smoke`: 489 assertions in 12 files, no site | 60 s |
-| The 4:30 demo, narrated | <https://youtu.be/tMvfF34CHDI> (unlisted) | 4.5 min |
+| The 4:24 demo, narrated | <https://youtu.be/tMvfF34CHDI> (unlisted) | 4.5 min |
 | The eight screenshots the submission uses | `../screenshots/` | 3 min |
 | The audit pack rendered by a real Confluence macro | the demo site, page `ITO/AC-01 audit pack` | 1 min |
 
