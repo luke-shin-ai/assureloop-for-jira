@@ -200,7 +200,7 @@ JQL request at all.
 | Fingerprint re-verification | **Written, verified live**: `Verify fingerprint` recomputes the pack's SHA-256 and shows VERIFIED MATCH / DRIFT DETECTED |
 | Trust boundary | **Written**: "what this pack guarantees / does NOT guarantee" on the panel, the Control Room, the macro and in the memo |
 | Seed data (Northwind Pay) | **Written**; insertion needs a live site |
-| `forge deploy` / install | **Source here is v6.50, which is not deployed yet.** What runs on `one-atlas-xkzp.atlassian.net` today is **development 6.48.0** and **production 2.1.0** (deployed 2026-11-20T09:04:34Z), Jira and Confluence both Up-to-date, Runs on Atlassian eligible on both. The distribution link (Sharing with anyone) installs **2.1.0**, so that is the build a reviewer sees; v6.49 added two post-submission fixes (the approval wording rule and the universal-claim flag described above); v6.50 adds the permission check on every write, the reporter half of segregation of duties, a validated project key, the six approval shapes of §1 and the custom-control form and import of §3. They go out in the first post-submission release, planned after 2026-12-13 |
+| `forge deploy` / install | **Source here is v6.50, which is not deployed yet.** What runs on `one-atlas-xkzp.atlassian.net` today is **development 6.48.0** and **production 2.1.0** (deployed 2026-11-20T09:04:34Z), Jira and Confluence both Up-to-date, Runs on Atlassian eligible on both. The distribution link (Sharing with anyone) installs **2.1.0**, so that is the build a reviewer sees, and every count in this file describes the repository build instead: the two differ and the Devpost write-up gives 2.1.0's own figures beside these. v6.49 added two post-submission fixes (the approval wording rule and the universal-claim flag described above); v6.50 adds the permission check on every write, the reporter half of segregation of duties, a validated project key, the six approval shapes of §1 and the custom-control form and import of §3. They go out in the first post-submission release, planned after 2026-12-01 with the demo-site reissue |
 
 ## 3. Structure
 
@@ -484,7 +484,14 @@ lives in SQL (`app_config.scan_principal_account_id`) and is therefore per insta
   with the app, so the gate works before the database is seeded.
 - **`allowImpersonation: true`** is declared (map form) on the scopes the daily scan
   needs: a scheduled trigger has no user, and `asApp()` has no `requestTeamworkGraph`.
-  `forge lint` accepts it.
+  Two grants are declared but unused: the impersonation flag on `write:jira-work` (every
+  write runs through `asApp()` inside a person's request) and the legacy v1 scope
+  `read:confluence-content.all` (the code calls the v2 page and space endpoints only).
+  Both stay only because a scope modification is a major version that makes every
+  installation re-approve, and the version the install link serves is the one judges
+  install; they are removed in the first post-submission release. No code path reads
+  either grant, and this is written in `manifest.yml` beside the scopes so a reviewer
+  reading the manifest sees the same statement the submission does.
 - **No egress, no external LLM, no Forge LLM.** Verdicts are rules; language is Rovo.
 
 ## 9. Verification checklist
@@ -524,11 +531,13 @@ external API, no container, no LLM billing.
 
 ## 11. Next
 
-- **Post-submission release, planned after 2026-12-13:** deploy v6.50 to production so the
-  install link serves the build this repository describes. It carries the approval wording
-  rule, the universal-claim flag, and the scope cleanup that has to wait for the judging
-  window (the unused impersonation on `write:jira-work` and `read:confluence-content.all`,
-  both of which force every installation to re-approve).
+- **Post-submission release, planned after 2026-12-01:** with the demo-site reissue, deploy
+  v6.50 to production so the install link serves the build this repository describes, and
+  the counts in this file describe the build a judge installs. It carries the approval
+  wording rule, the universal-claim flag, and the scope cleanup (the unused impersonation on
+  `write:jira-work` and `read:confluence-content.all`, both of which force every installation
+  to re-approve). Until then the install link serves 2.1.0, and the Devpost write-up states
+  that build's figures next to these.
 - ~~W1: deploy + install on the demo site, seed Northwind Pay, run the G0 probes~~ done
   2026-11-18.
 - ~~STALE row, trace-SVG overlap/label clipping, Control Room scan button, macro render~~ done

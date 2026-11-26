@@ -13,14 +13,17 @@
 #     needs: a scheduled trigger has no user context, and the Teamwork Graph is
 #     only reachable through asUser() (asApp() has no requestTeamworkGraph), so
 #     the drift scan impersonates the stored scan principal.
-#   * `write:jira-work` also carries `allowImpersonation: true` today, and the code
-#     never uses it: every write (remediation issues, the claim label) runs through
-#     asApp() inside a person's request. It stays declared because removing an
-#     impersonation grant is a scope modification, which Forge treats as a MAJOR
-#     version upgrade — every installation, including the reviewer sites this is
-#     judged from, would have to re-approve mid-submission. Dropping it is the first
-#     post-submission release (after 2026-12-13); the reason is written beside the
-#     scope below, and nothing in the code reads it.
+#   * Two grants are declared and unused, on purpose and in writing:
+#     `write:jira-work` carries `allowImpersonation: true`, and
+#     `read:confluence-content.all` is the legacy v1 content scope. No code path reads
+#     either: every write (remediation issues, the claim label) runs through asApp()
+#     inside a person's request, and the Confluence calls are the v2 page and space
+#     endpoints. They stay because a scope modification is a scope change, which Forge
+#     treats as a MAJOR version upgrade: the version this link serves is the version a
+#     judge installs, so the cleanup moves to the same release as the new build rather
+#     than making reviewers re-approve in between. That release is planned after
+#     2026-12-01, with the demo-site reissue. The same sentence is in README §8 and in
+#     the Devpost write-up, so a reviewer reading any one of the three finds it.
 #   * Each declared scope names its reader below, so a reviewer diffing the
 #     manifest against the code can see there is no scope theatre.
 #   * No egress is declared: the app talks to nothing outside Atlassian.
@@ -264,12 +267,12 @@ permissions:
     # --- Jira REST: the population, comments, remote links, remediation issues ---
     # read:jira-work  — JQL population, issue, comments, remote links (src/jira/rest.ts)
     # write:jira-work — remediation issues and the claim label (createJiraIssue, addIssueLabel)
-    # REVIEWED (2026-11-19): impersonation on write:jira-work is privilege the app does
-    # not use (every write is asApp inside a person's request). Removing it is a scope
-    # modification, which Forge treats as a MAJOR version upgrade — every installation,
-    # including the reviewer sites judged from, would have to re-approve mid-submission.
-    # It is scheduled for the post-submission release (after 2026-12-13), not dropped
-    # silently: the reason is the paragraph above, and no code path reads the grant.
+    # REVIEWED (2026-11-19, restated 2026-11-26): impersonation on write:jira-work is
+    # privilege the app does not use (every write is asApp inside a person's request).
+    # It is not dropped in this submission build: a scope modification is a MAJOR
+    # version, and the version this link serves is the one a judge installs, so the
+    # cleanup travels with the next build instead of forcing every installation to
+    # re-approve in between. No code path reads the grant.
     'read:jira-work':
       allowImpersonation: true
     'write:jira-work':
@@ -278,7 +281,8 @@ permissions:
     # --- Confluence REST: policy page existence, freshness, space resolution ---
     # read:page:confluence is the only Confluence REST scope the code calls
     # (/wiki/api/v2/pages, /wiki/api/v2/spaces). read:confluence-content.all was the v1
-    # content API and is unused; it rides along until the same post-submission upgrade.
+    # content API and is unused; it rides along until the same next-build release, for
+    # the same reason: dropping it alone is still a scope change and a MAJOR version.
     'read:confluence-content.all':
       allowImpersonation: true
     'read:page:confluence':
